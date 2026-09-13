@@ -62,6 +62,18 @@ not a general guarantee that code or a model claim is honest.
   changes, and transport facts. Its pre-start Codex check keeps the declared
   result path worker-owned. Exit status is evidence, not acceptance.
 
+- **`dispatch-review.js`** — command-line front end for `external-runner.js`.
+  It adds no selection policy: `ag-settings.js` resolves the profile, tier,
+  model, and effort from the coordinator host given by `--host codex|claude`.
+  It owns the delegate marker, per-family model and effort flags, report
+  preamble trimming, and the recorded dispatch facts, including the
+  nested-worker verdict and its visibility.
+
+- **`codex-worker.js`** — launch shim for a Codex installed only as an npm
+  package. Worker launch uses `shell:false`, so neither `codex.cmd` nor the
+  extensionless POSIX shim beside it can be spawned; this resolves the
+  package's real JavaScript entrypoint and re-execs it with the current node.
+
 - **`queue-contract.js`** — validates and publishes the planning-only frozen
   queue. It checks exact plan bytes, the digest-bound
   `.queue-generation.json`, dependencies, conflicts, private staging, the
