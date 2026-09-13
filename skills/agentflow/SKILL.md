@@ -21,7 +21,7 @@ Already-launched looper workers follow their supplied plan directly, not this ho
 
 1. The host supplies the complete Agentflow skill directory as `<active-agentflow-skill-dir>`. Read the skill from that path. If the host does not supply a complete path, stop with one clear message; never guess a home-directory installation or probe a shell function.
 
-2. The first and only startup call uses this canonical startup command with the exact owner message on standard input: `node <active-agentflow-skill-dir>/scripts/agf.js start --repo <repo> --host <codex|claude> --message-stdin --json`. Never make an empty or probe startup call; retry may see setup as foreign. Keep owner text outside shell syntax; close stdin. Never use a pseudo-terminal or `tty: true`. For shell tools, use a single-quoted heredoc: append `<<'AGF_INPUT'`, the exact message, and a bare `AGF_INPUT` line. Never wait for stdin or create an input file. — I-077.
+2. The first and only startup call uses this canonical startup command with the exact owner message on standard input: `node <active-agentflow-skill-dir>/scripts/agf.js start --repo <repo> --host <codex|claude> --message-stdin --json`. Never make an empty or probe startup call; retry may see setup as foreign. Keep owner text outside shell syntax; close stdin. Never use a pseudo-terminal or `tty: true`. For POSIX shell tools, use a single-quoted heredoc: append `<<'AGF_INPUT'`, the exact message, and a bare `AGF_INPUT` line; native PowerShell has no heredoc, so see `## Windows` below. Never wait for stdin or create an input file. — I-077.
 
    Git is optional; `<repo>` is the working project folder. With `git.state: unavailable`, continue there; never require another path or run `git init`. Commits, pushes, worktrees, and Git evidence are inapplicable. Use local closeout with owner capture, validation, tests, and host review.
 
@@ -54,6 +54,15 @@ Keep trivial one-step work, non-operational content, coupled or ambiguous diagno
 The `direct` planning route supports either executor for clear, reversible work without an AG pipeline, including with `allow-ag: off` or `ask`. Non-operational content remains host work. Load delegation rules and runner details only when selecting or dispatching a worker. Important unknowns may use named advisors. Expensive-to-reverse behavior, trust or subsystem boundaries, serious hidden-test risk, and allowed exact pipeline triggers use the full pipeline.
 
    Honor owner executor choices; no-delegation or active fast-lane keeps execution with the host. Executor choice does not waive required validation, approval, or independent review; honor explicit review waivers and fast-lane’s independent-review waiver. Keep conversation and progress records local. Without an eligible worker, continue authorized host work; report limits caused by an explicit worker/model choice, required independence, or missing capability. Follow the delegation load rule below; ordinary delegation does not require `references/ag.md`.
+
+## Windows
+
+- In PowerShell, install shortcuts with `node <active-agentflow-skill-dir>/scripts/setup.js --fix --profile "$PROFILE"`. Pass the same `--profile "$PROFILE"` to `agf uninstall`. This selects the actual profile, including PowerShell 7 or a redirected Documents folder. Restart the shell after installation.
+- The canonical startup heredoc is POSIX-shell only. In native PowerShell, send the exact owner message to `--message-stdin` through the host's own standard-input mechanism; `<<'AGF_INPUT'` is a Bash construct with no PowerShell equivalent. Owner text still stays outside shell syntax, stdin still closes, and no input file is created. The same applies to every other stdin-taking command, including `agf close --manifest-stdin` and `notebook-write.js append-input --input-stdin`.
+- Quote paths and use PowerShell syntax. `export` and Unix utilities in examples require a Unix shell. Run WSL examples entirely inside WSL with its own Node and Git.
+- Worker launch uses literal arguments with no shell. Put native worker `.exe` files on PATH; batch-only `.cmd` or `.bat` installations are not supported. The same restriction applies to `AGF_OPEN`; set it to a native editor executable when `code` resolves only to `code.cmd`.
+- The looper requires WSL. Its protected-state checks depend on POSIX ownership and permission bits, which native Windows does not enforce. Keep those checks intact; use a repository in the WSL Linux filesystem and run the entire looper there.
+- External-worker cancellation forcibly terminates the worker process tree, because Windows has no POSIX process-group graceful signal. Nested-worker detection reads the POSIX process table, so on Windows `nested_worker.visible` stays `false` and containment cannot run; treat a Windows worker run as unproven for nested-agent containment.
 
 ## Every message after startup
 

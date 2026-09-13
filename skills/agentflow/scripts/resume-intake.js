@@ -73,6 +73,13 @@ const read_bounded = file => {
   }
 }
 
+// Git checkouts with core.autocrlf, and any editor on Windows, leave the
+// notebook CRLF. status_block() looks for a literal '\n---\n' separator, so a
+// CRLF notebook aborts intake outright rather than degrading; normalize once
+// here so every consumer below sees LF. No offset from this text escapes
+// collect_intake, so normalizing cannot shift a reported span.
+const normalize_newlines = text => text.replaceAll('\r\n', '\n')
+
 const status_block = text => {
   const end = text.indexOf('\n---\n')
   if (end < 0) throw new Error('notebook has no STATUS separator')
@@ -237,7 +244,8 @@ const collect_intake = ({ repo_root = process.cwd(), notebook_path, active_host 
 	const config_path = relative_notebook === root_config.switches['target-doc'] ? root_config_path : settings.resolve_config_path(root, relative_notebook)
   const config = settings.read_json_config(config_path, { repo_root: root, notebook_path: relative_notebook, active_host })
   const bounded = read_bounded(notebook)
-  const text = bounded.complete ? bounded.text : bounded.tail
+  const text = normalize_newlines(bounded.complete ? bounded.text : bounded.tail)
+  const status_source = bounded.complete ? text : normalize_newlines(bounded.head)
   const current_ask = final_ask(text)
   const fast_lane = parse_fast_lane(current_ask?.text)
   if (!bounded.complete && current_ask === null) throw new Error(`current round exceeds the ${MAX_CURRENT_ROUND_BYTES}-byte fast-intake limit or has no complete final Ask boundary`)
@@ -249,7 +257,7 @@ const collect_intake = ({ repo_root = process.cwd(), notebook_path, active_host 
     changed_paths: [],
     expected_owner_input: false,
     stream_decision: { reason: 'not_git_repository', required_next_rulebook: null, open_new_stream: false, evidence: ['plain folder; Git change tracking and streams are unavailable'] },
-    status: status_block(bounded.complete ? text : bounded.head),
+    status: status_block(status_source),
     current_ask,
     ...(fast_lane ? { fast_lane } : {}),
   }
@@ -266,7 +274,7 @@ const collect_intake = ({ repo_root = process.cwd(), notebook_path, active_host 
     active_host,
     config,
   })
-  const status = status_block(bounded.complete ? text : bounded.head)
+  const status = status_block(status_source)
   return {
     repository: root,
     notebook: relative_notebook,
