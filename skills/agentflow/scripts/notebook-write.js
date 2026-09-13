@@ -562,6 +562,12 @@ const consume_unchanged_draft = (file, original) => {
   node_fs.unlinkSync(file);
 };
 
+// Windows has no POSIX permission bits. chmod there only toggles the read-only
+// attribute, so a requested 0o600 always reads back as 0o666 and the assertion
+// below fails every receipt and notebook write while proving nothing.
+// Confidentiality on Windows comes from the ACL the file inherits instead.
+const posix_modes_enforceable = process.platform !== 'win32';
+
 const atomic_replace = (file, content, mode) => {
   const temporary = `${file}.${process.pid}.${Date.now()}.${node_crypto.randomBytes(8).toString('hex')}.tmp`;
   let descriptor = null;
@@ -573,8 +579,10 @@ const atomic_replace = (file, content, mode) => {
     node_fs.closeSync(descriptor);
     descriptor = null;
     node_fs.chmodSync(temporary, mode);
-    const temporary_stat = node_fs.lstatSync(temporary, { bigint: true });
-    if (Number(temporary_stat.mode & 0o7777n) !== mode) fail('temporary notebook mode could not be preserved');
+    if (posix_modes_enforceable) {
+      const temporary_stat = node_fs.lstatSync(temporary, { bigint: true });
+      if (Number(temporary_stat.mode & 0o7777n) !== mode) fail('temporary notebook mode could not be preserved');
+    }
     node_fs.renameSync(temporary, file);
     renamed = true;
   } finally {
