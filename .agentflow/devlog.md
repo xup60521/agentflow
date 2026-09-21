@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: OpenCode support plan and review closeout recorded in Git history.
+Current commit: reviewed OpenCode plan at 525ff21867cf990786e5b57ebfa60c29e7285470.
 
-Tests/scenarios: tracker contract 3/3; saved plan inspection; targeted cross-check PASS.
+Tests/scenarios: no implementation tests run; source unchanged.
 
 Configuration: ag.json — schema v7; validated for codex this round.
 
-Proven: reviewed OpenCode plan supports explicit provider/model and provider-specific reasoning effort.
+Proven: implementation approval requested for the exact reviewed design.
 
-Open: implementation awaits owner approval.
+Open: awaiting exact Design Go.
 
-Next: await owner approval or plan revisions.
+Next: owner replies Design Go: 525ff21.
 
-Artifacts: .agentflow/artifacts/A-001-opencode-support/design.md; tracker and cross-check records.
+Artifacts: .agentflow/artifacts/A-001-opencode-support/design.md; review records.
 
 Archived eras: none.
 
@@ -73,5 +73,39 @@ Streams: none.
 ---
 
 # → Ask / A-002 (xup60521)
+
++ go implementing
+
+# ← Reply / A-002
+
+* _2026-09-21 15:49:31 +0800 (gpt-5.6-sol/low)_
+
+## [SUMMARY]
+
+- OpenCode 實作尚未開始；已審查設計屬重大行為變更，需要精確 Design Go 才能修改原始碼。
+
+- 請回覆下方核准字串；收到後我會直接依計畫實作與驗證。
+
+## [FINAL REPORT]
+
+1. **開始實作 OpenCode 支援**
+
+   - 目前狀態：受設計核准門檻限制，尚未修改產品程式碼。
+
+   - 已審查設計 commit：`525ff21867cf990786e5b57ebfa60c29e7285470`。
+
+   - 原因：變更涵蓋設定 schema、host identity、hooks 與外部 worker dispatch，依 Agentflow 的重大變更規則必須使用精確 commit 前綴核准。
+
+## Questions (batched — each with a suggested default)
+
+1. 是否核准依已審查設計開始實作？
+
+   - Suggested default: `Design Go: 525ff21`
+
+   - ans:
+
+---
+
+# → Ask / A-003 (xup60521)
 
 +
