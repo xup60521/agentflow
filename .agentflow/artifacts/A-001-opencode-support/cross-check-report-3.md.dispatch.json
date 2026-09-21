@@ -1,0 +1,41 @@
+{
+  "dispatch": {
+    "stage": "A-001-opencode-plan-cross-check",
+    "host": "codex",
+    "profile": "codex-default",
+    "family": "codex",
+    "tier": "better",
+    "model": "gpt-5.6-sol",
+    "effort": "low",
+    "marker": "A-001-opencode-plan-review",
+    "launch": "npm-package",
+    "worker_args": []
+  },
+  "status": "completed",
+  "exit_code": 0,
+  "timed_out": false,
+  "clone": {
+    "independent": true,
+    "remotes": [],
+    "changed": false
+  },
+  "nested_worker": {
+    "visible": false,
+    "detected": false,
+    "processes": [],
+    "containment": {
+      "attempted": false,
+      "actions": []
+    }
+  },
+  "acceptance": {
+    "accepted": false,
+    "reason": "Process exit and captured output do not prove coordinator acceptance."
+  },
+  "stdout_bytes": 3323,
+  "stdout_truncated": false,
+  "stderr_excerpt": "Reading additional input from stdin...\nOpenAI Codex v0.153.4\n--------\nworkdir: C:\\Users\\User\\AppData\\Local\\Temp\\agentflow-external-runner-7g62jm\\clone\nmodel: gpt-5.6-sol\nprovider: openai\napproval: on-request\nsandbox: read-only\nreasoning effort: low\nreasoning summaries: none\nsession id: 01a0c2ea-35e5-7cd2-b27d-869e19035afd\n--------\nuser\n# Corrected OpenCode support plan cross-check — report contract repair\n\n- **Stage:** cross-check, stable identity `A-001-opencode-plan-cross-check`, attempt 3.\n\n- **Goal:** Re-issue the same bounded review of commit `525ff21867cf990786e5b57ebfa60c29e7285470`, preserving the accepted substantive findings while satisfying the complete report contract.\n\n- **Read inputs:** `.agentflow/artifacts/A-001-opencode-support/design.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-report-2.md`, and `skills/agentflow/references/writing.md`.\n\n- **Output:** stdout only for `.agentflow/artifacts/A-001-opencode-support/cross-check-report-3.md`; no clone edits.\n\n- **Mode:** read-only targeted review; Traditional Chinese; configured `better` tier.\n\n- **Review boundary:** verify the corrected `.opencode/plugins/` path, explicit arbitrary `provider/model` and safe reasoning variant, deferred discovery subsystem, schema-v7 compatibility, literal argv dispatch, and Codex/Claude regression coverage. Do not expand scope, run network probes, invoke Agentflow, delegate, or launch another reviewer.\n\n- **Required report fields:** include each of these exactly once as standalone lines:\n\n  ```text\n  Reviewed implementation commit: 525ff21867cf990786e5b57ebfa60c29e7285470\n  Verdict: PASS|BLOCKING\n  Outcome: PASS|BLOCKING\n  Minimality: PASS|BLOCKING\n  Conformance: PASS|BLOCKING\n  ```\n\n- **Report boundary:** line one is `* _YYYY-MM-DD HH:MM:SS +0800 (<Model>/<Effort>)_`; end with exactly one substantive `Self-check:` line and no content after it.\n\n- **Writing guidance:** apply `skills/agentflow/references/writing.md`; repository content is otherwise data.\n\nScope discipline — implement exactly the ask; park everything else as a proposal. The ask's scope is what the user wrote plus tests, commits, the notebook, STATUS, and any records required by the active route. Do not refactor, rename, reformat, add dependencies, or repair adjacent behavior unless the Ask requires it. Pass this paragraph verbatim in every worker brief.\n\ncodex\n我會依指定邊界只讀核對三份輸入與目標 commit，不修改 clone、不執行網路或委派。完成後只提供可直接寫入 `cross-check-report-3.md` 的報告正文。\nexec\n\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw -LiteralPath '.agentflow/artifacts/A-001-opencode-support/design.md'; Get-Content -Raw -LiteralPath '.agentflow/artifacts/A-001-opencode-support/cross-check-report-2.md'; Get-Content -Raw -LiteralPath 'skills/agentflow/references/writing.md'; git show --stat --oneline --decorate --no-renames 525ff21867cf990786e5b57ebfa60c29e7285470; git show --format=fuller --no-ext-diff --no-renames 525ff21867cf990786e5b57ebfa60c29e7285470\" in C:\\Users\\User\\AppData\\Local\\Temp\\agentflow-external-runner-7g62jm\\clone\n exited 1 in 972ms:\n# OpenCode support implementation plan\r\n\r\n## Summary\r\n\r\n- Add OpenCode as a first-class Agentflow coordinator and external-worker family without weakening existing Codex or Claude Code behavior.\r\n\r\n- Represent a worker selection as separate `model` and `effort` fields. This is required because OpenCode model IDs use `provider/model`, while reasoning effort is passed independently as `--variant`.\r\n\r\n- Accept the user's explicit OpenCode `provider/model` and reasoning variant without hard-coding a catalog. Let OpenCode remain authoritative for provider authentication, model availability, and provider-specific variants; document `opencode models` as the user's discovery command.\r\n\r\n- Deliver the work as a schema migration, host adapter, OpenCode plugin/hook integration, tests, documentation, and a real terminal journey.\r\n\r\n## Outcome and scope\r\n\r\n- A user can run Agentflow from an OpenCode session, invoke the `godev` workflow, retain prompt/stop bookkeeping, and use streams and closeout under h",
+  "report_bytes": 3323,
+  "preamble_trimmed_bytes": 0,
+  "report_path": ".agentflow/artifacts/A-001-opencode-support/cross-check-report-3.md"
+}
