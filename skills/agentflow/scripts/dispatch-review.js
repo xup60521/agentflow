@@ -18,7 +18,7 @@ const CODEX_WORKER = node_path.join(__dirname, 'codex-worker.js')
 const USAGE = [
   'usage: node dispatch-review.js --repo <path> --brief <path> --output <path>',
   '                              --stage <name> --marker <token>',
-  '                              [--host <codex|claude>] [--role <name>]',
+  '                              [--host <codex|claude|opencode>] [--role <name>]',
   '                              [--notebook <path>] [--worker-args <json-array>]',
 ].join('\n')
 
@@ -56,13 +56,13 @@ const parse_worker_args = raw => {
 // runtime markers ag-settings already trusts.
 const resolve_host = (explicit, options = {}) => {
   if (explicit !== undefined) {
-    if (!['codex', 'claude'].includes(explicit)) fail('--host must be codex or claude')
+    if (!['codex', 'claude', 'opencode'].includes(explicit)) fail('--host must be codex, claude, or opencode')
     return explicit
   }
   try {
     return ag_settings.detect_host({ env: options.env })
   } catch (error) {
-    return fail(`${error.message}; pass --host codex|claude`)
+    return fail(`${error.message}; pass --host codex|claude|opencode`)
   }
 }
 
@@ -142,6 +142,7 @@ const select_reviewer = (config, { role = 'cross-check', active_host, ...validat
 const family_model_flags = {
   codex: (model, effort) => ['-m', model, '-c', `model_reasoning_effort=${effort}`],
   claude: (model, effort) => ['--model', model, '--effort', effort],
+  opencode: (model, effort) => ['--model', model, ...(effort === 'default' ? [] : ['--variant', effort]), '--format', 'json'],
 }
 
 const worker_invocation = (selected, worker_args, brief_text) => {

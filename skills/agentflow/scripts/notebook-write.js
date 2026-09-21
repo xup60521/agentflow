@@ -597,13 +597,13 @@ const format_owner_input = text => text.replace(/\r\n?/gu, '\n').trim().split(/\
   .map(paragraph => `+ ${paragraph.replace(/^\+ /u, '').split('\n').join('\n  ')}`).join('\n\n');
 
 const input_receipt_path = (root, notebook, host) => {
-  if (!['codex', 'claude'].includes(host)) fail('input receipt host must be codex or claude');
+  if (!['codex', 'claude', 'opencode'].includes(host)) fail('input receipt host must be codex, claude, or opencode');
   const key = node_crypto.createHash('sha256').update(notebook).digest('hex');
   return node_path.join(root, `.${host}`, `agentflow-input-${key}.json`);
 };
 
 const input_receipts = (root, notebook, host, ask) => {
-  if (!['codex', 'claude'].includes(host)) fail('input receipt host must be codex or claude');
+  if (!['codex', 'claude', 'opencode'].includes(host)) fail('input receipt host must be codex, claude, or opencode');
   const directory = node_path.join(root, `.${host}`);
   try { node_fs.mkdirSync(directory, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
   ensure_path_components(root, directory, 'input receipts');
@@ -695,7 +695,7 @@ const capture_input_scope = (root, notebook, host, ask) => {
 };
 
 const read_input_scope = (root, notebook, host, ask) => {
-  if (!['codex', 'claude'].includes(host)) return null;
+  if (!['codex', 'claude', 'opencode'].includes(host)) return null;
   try {
     const file = input_receipt_path(root, notebook, host);
     ensure_path_components(root, file, 'input receipts');

@@ -302,13 +302,13 @@ const parse_args = argv => {
 	const result = { repo_root: process.cwd(), notebook_path: undefined, active_host: 'codex' }
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]
-    if (!['--repo', '--notebook', '--host'].includes(flag) || index + 1 >= argv.length) throw new Error('usage: node resume-intake.js [--repo <path>] [--notebook <path>] [--host <codex|claude>]')
+    if (!['--repo', '--notebook', '--host'].includes(flag) || index + 1 >= argv.length) throw new Error('usage: node resume-intake.js [--repo <path>] [--notebook <path>] [--host <codex|claude|opencode>]')
     const value = argv[++index]
     if (flag === '--repo') result.repo_root = value
     if (flag === '--notebook') result.notebook_path = value
     if (flag === '--host') result.active_host = value
   }
-  if (!['codex', 'claude'].includes(result.active_host)) throw new Error('host must be codex or claude')
+  if (!['codex', 'claude', 'opencode'].includes(result.active_host)) throw new Error('host must be codex, claude, or opencode')
   return result
 }
 

@@ -51,8 +51,8 @@ const main = () => {
 
   // Installed hook commands MUST carry their owning host explicitly. Runtime
   // marker variables are not part of the shared Stop-hook payload. — I-043.
-  if (active_host !== 'codex' && active_host !== 'claude') {
-    throw new Error('Stop hook requires --host codex or --host claude');
+  if (!['codex', 'claude', 'opencode'].includes(active_host)) {
+    throw new Error('Stop hook requires --host codex, --host claude, or --host opencode');
   }
 
   // CLAUDE_PROJECT_DIR is Claude-Code-only; every host passes cwd on stdin.

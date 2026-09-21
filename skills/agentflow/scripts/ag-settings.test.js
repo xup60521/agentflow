@@ -1486,6 +1486,30 @@ test('cross-check uses its configured tier to select the designated provider', (
 	assert.equal(selection.effort, 'medium')
 })
 
+test('schema v8 accepts structured OpenCode model selections without an allowlist', () => {
+	const config = settings.make_template('opencode', {
+		model: 'custom-provider/model-x',
+		effort: 'thinking-plus',
+	})
+	const selection = settings.resolve_worker_tier(config, { role: 'implementation' }, {
+		active_host: 'opencode', executables: ['opencode'],
+	})
+	assert.equal(config['schema-version'], 8)
+	assert.equal(selection.profile.family, 'opencode')
+	assert.equal(selection.model, 'custom-provider/model-x')
+	assert.equal(selection.effort, 'thinking-plus')
+	assert.equal(settings.validate_config(config, { active_host: 'opencode', executables: ['opencode'] }).valid, true)
+})
+
+test('model selection parser keeps legacy strings readable and structured ids unambiguous', () => {
+	assert.deepEqual(settings.parse_model_selection('gpt-5/high'), { model: 'gpt-5', effort: 'high', value: 'gpt-5/high' })
+	assert.deepEqual(settings.parse_model_selection({ model: 'openai/gpt-5', effort: 'high' }), {
+		model: 'openai/gpt-5', effort: 'high', value: { model: 'openai/gpt-5', effort: 'high' },
+	})
+	assert.equal(settings.parse_model_selection({ model: 'openai/gpt-5;echo', effort: 'high' }), null)
+	assert.equal(settings.parse_model_selection({ model: 'openai/gpt-5', effort: 'high value' }), null)
+})
+
 test('custom tiers are accepted, route to a supporting profile, and fall back to basic when necessary', () => {
 	const config = settings.make_template('codex')
 	config['pipeline-roles'].requirements = 'deep-review'

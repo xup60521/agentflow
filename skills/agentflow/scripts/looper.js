@@ -774,7 +774,7 @@ const configure_child = (context) => {
     })
   }
   const selected_profile = selection ? selection.profile : profile
-  const standard_selection = selection && ['codex', 'claude'].includes(selected_profile.family)
+  const standard_selection = selection && ['codex', 'claude', 'opencode'].includes(selected_profile.family)
   context.executable = selected_profile.command[0]
   context.command_args = selected_profile.command.slice(1)
   context.worker_family = selected_profile.family || null

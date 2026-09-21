@@ -288,14 +288,14 @@ const gather_checkpoint_verification = (project_root, devlog_text, work, config_
 };
 
 const same_config_except_language = (actual, expected, project_root, active_host) => {
-  if (!['codex', 'claude'].includes(active_host)) return false;
+  if (!['codex', 'claude', 'opencode'].includes(active_host)) return false;
   const options = { repo_root: project_root, active_host, check_executables: false };
   if (![actual, expected].every(config => ag_settings.validate_config(config, options).valid)) return false;
   return isDeepStrictEqual(actual, { ...expected, switches: { ...expected.switches, lang: actual.switches.lang } });
 };
 
 const canonical_bootstrap_config = (project_root, notebook_path, config_path, active_host) => {
-  if (!['codex', 'claude'].includes(active_host) || config_path === undefined) return false;
+  if (!['codex', 'claude', 'opencode'].includes(active_host) || config_path === undefined) return false;
   const relative_config = node_path.relative(project_root, config_path).split(node_path.sep).join('/');
   if (relative_config !== 'ag.json') return false;
   try {

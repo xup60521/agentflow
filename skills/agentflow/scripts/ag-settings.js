@@ -11,7 +11,8 @@ const node_path = require('node:path')
 const node_child_process = require('node:child_process')
 const { format_local_timestamp } = require('./local-time.js')
 
-const schema_version = 7
+const schema_version = 8
+const readable_schema_versions = Object.freeze([7, schema_version])
 const tier_names = Object.freeze(['best', 'better', 'basic', 'cheap'])
 const pipeline_role_names = Object.freeze(['requirements', 'codewalk', 'explore', 'spike', 'spec', 'implementation', 'security-scan', 'acceptance', 'cross-check', 'learn'])
 const mandatory_pipeline_roles = Object.freeze(['requirements', 'spec', 'implementation', 'acceptance'])
@@ -35,6 +36,7 @@ const changeable_switch_names = Object.freeze(switch_names.filter(key => key !==
 const host_markers = Object.freeze({
 	codex: ['CODEX_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_CI', 'CODEX_SANDBOX', 'CODEX_CLI'],
 	claude: ['CLAUDE_PROJECT_DIR', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CLI'],
+	opencode: ['OPENCODE_SESSION_ID', 'OPENCODE_CLI'],
 })
 
 const role_tiers = Object.freeze({
@@ -85,8 +87,8 @@ class SettingsError extends Error {
 const error_from = (message, errors, warnings, code) => new SettingsError(message, { errors, warnings, code })
 
 const normalise_host = host => {
-	if (host === 'codex' || host === 'claude') return host
-	throw new SettingsError('active host must be codex or claude', { code: 'AG_HOST_INVALID' })
+	if (host === 'codex' || host === 'claude' || host === 'opencode') return host
+	throw new SettingsError('active host must be codex, claude, or opencode', { code: 'AG_HOST_INVALID' })
 }
 
 const marker_is_set = value => value !== undefined && value !== null && value !== '' && value !== '0' && value !== 'false'
@@ -117,7 +119,7 @@ const detect_host_info = (options = {}) => {
 
 const detect_host = options => detect_host_info(options).host
 
-const family_for_host = host => host === 'codex' ? 'codex' : host === 'claude' ? 'claude' : ''
+const family_for_host = host => ['codex', 'claude', 'opencode'].includes(host) ? host : ''
 const opposite_host = host => host === 'codex' ? 'claude' : host === 'claude' ? 'codex' : ''
 
 const host_template_values = {
@@ -213,7 +215,20 @@ const host_template_values = {
   },
 }
 
-const make_template = host => clone_value(host_template_values[normalise_host(host)])
+const make_template = (host, selection = {}) => {
+	const normalized = normalise_host(host)
+	if (normalized !== 'opencode') {
+		const base = clone_value(host_template_values[normalized])
+		for (const profile of base['external-workers']) for (const tier of Object.keys(profile.tiers)) profile.tiers[tier] = serialize_model_selection(parse_model_selection(profile.tiers[tier]))
+		return base
+	}
+	const model = selection.model
+	const effort = selection.effort === undefined ? 'default' : selection.effort
+	if (parse_model_selection({ model, effort }) === null) throw new SettingsError('OpenCode setup requires a safe provider/model and effort variant', { code: 'AG_OPENCODE_SELECTION_REQUIRED' })
+	const base = clone_value(host_template_values.codex)
+	base['external-workers'] = [{ id: 'opencode-default', command: ['opencode', 'run'], priority: 3, family: 'opencode', tiers: Object.fromEntries(tier_names.map(tier => [tier, { model, effort }])) }]
+	return base
+}
 const template_for_host = make_template
 
 const normalise_initial_language = value => {
@@ -364,7 +379,14 @@ const path_is_inside_real_root = (root, target) => {
 	return real_target === real_root || real_target.startsWith(`${real_root}${node_path.sep}`)
 }
 
-const parse_model_value = value => {
+const safe_model = value => typeof value === 'string' && value.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/u.test(value)
+const safe_effort = value => typeof value === 'string' && value.length <= 32 && /^[A-Za-z][A-Za-z0-9_-]*$/u.test(value)
+
+const parse_model_selection = value => {
+	if (is_plain_object(value)) {
+		if (!safe_model(value.model) || !safe_effort(value.effort)) return null
+		return { model: value.model, effort: value.effort, value }
+	}
 	if (typeof value !== 'string') return null
 	const slash = value.lastIndexOf('/')
 	if (slash <= 0 || slash === value.length - 1) return null
@@ -374,6 +396,8 @@ const parse_model_value = value => {
 	if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(model) || !/^[A-Za-z][A-Za-z0-9_-]*$/u.test(effort)) return null
 	return { model, effort, value }
 }
+const parse_model_value = parse_model_selection
+const serialize_model_selection = selection => ({ model: selection.model, effort: selection.effort })
 
 const executable_available = (command, options = {}) => {
 	if (options.executables !== undefined) {
@@ -405,15 +429,17 @@ const executable_available = (command, options = {}) => {
 const executable_availability = (options = {}) => ({
 	codex: executable_available('codex', options),
 	claude: executable_available('claude', options),
+	opencode: executable_available('opencode', options),
 })
 
 const profile_family = profile => {
 	if (typeof profile.family === 'string' && profile.family.length > 0) return profile.family
-	if (!profile.tiers || !tier_names.every(tier => typeof profile.tiers[tier] === 'string')) return ''
+	if (!profile.tiers || !tier_names.every(tier => parse_model_selection(profile.tiers[tier]) !== null)) return ''
 	const models = tier_names.map(tier => parse_model_value(profile.tiers[tier])).filter(Boolean).map(parsed => parsed.model)
 	if (models.length !== tier_names.length) return ''
 	if (models.every(model => model.startsWith('gpt-'))) return 'codex'
 	if (models.every(model => model.startsWith('claude-'))) return 'claude'
+	if (models.every(model => model.includes('/'))) return 'opencode'
 	return ''
 }
 
@@ -638,7 +664,7 @@ const validate_current_config = (config, options = {}) => {
 	const expected = ['schema-version', 'switches', 'pipeline-roles', 'external-workers']
 	for (const key of sorted_keys(config)) if (!expected.includes(key)) warnings.push(`warning: Invalid ag.json: unknown top-level key '${key}' is ignored.`)
 	for (const key of expected) if (!has_own(config, key)) errors.push(`Invalid ag.json: missing top-level key '${key}'.`)
-	if (config['schema-version'] !== schema_version || !Number.isInteger(config['schema-version'])) errors.push(`Invalid ag.json: schema-version must be integer ${schema_version}.`)
+	if (!Number.isInteger(config['schema-version']) || !readable_schema_versions.includes(config['schema-version'])) errors.push(`Invalid ag.json: schema-version must be integer 7 or ${schema_version}.`)
 
 	validate_switches(config, options, switch_names, ['off', 'on'], errors, warnings)
 	validate_external_workers(config['external-workers'], errors, warnings)
@@ -1369,7 +1395,7 @@ const status_field_order = ['Project:', 'Notebook:', 'Current commit:', 'Tests/s
 
 const status_stream_pattern = /^stream:\s+([a-z0-9][a-z0-9-]*)\s+—\s+active\s+—\s+([^\s]+\.devlog\.md)$/u
 const status_rename_pattern = /^Renamed:\s+([^\s—]+\.md)\s+→\s+([^\s—]+\.md)\s+\((\d{4}-\d{2}-\d{2})\)\.?$/u
-const status_configuration_pattern = new RegExp(`^Configuration:\\s+((?:\\.?[A-Za-z0-9_-]+\\/)*ag\\.json)\\s+—\\s+schema v${schema_version};\\s+(validated|blocked|invalid|missing|unvalidated)\\s+for\\s+(codex|claude)\\s+this round\\.$`, 'u')
+const status_configuration_pattern = new RegExp(`^Configuration:\\s+((?:\\.?[A-Za-z0-9_-]+\\/)*ag\\.json)\\s+—\\s+schema v(?:7|${schema_version});\\s+(validated|blocked|invalid|missing|unvalidated)\\s+for\\s+(codex|claude|opencode)\\s+this round\\.$`, 'u')
 const status_backlink_pattern = /^Backlink: main notebook `[^`\s]+\.md` \(main checkout\)$/u
 const status_feature_pattern = /^Feature: [a-z0-9][a-z0-9-]*(?: — active — .+| — closed)$/u
 
@@ -1854,6 +1880,8 @@ module.exports = {
 	workspace_dir_for,
 	workspace_paths,
 	parse_model_value,
+	parse_model_selection,
+	serialize_model_selection,
 	select_profile,
 	profile_family,
 	resolve_config_path,

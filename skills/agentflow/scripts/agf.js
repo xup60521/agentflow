@@ -33,7 +33,7 @@ const DELIVERY_LOCK_NAME = 'agf-delivery.lock'
 
 const USAGE_COMMANDS = [
 	{ label: 'skills', syntax: 'agf skills audit [--json]', description: 'inventory local skills and provide a read-only conflict audit prompt' },
-	{ label: 'start', syntax: 'agf start --repo <path> --host <codex|claude> --message-stdin [--json]', description: 'initialize, record the owner message, and return one bounded intake result' },
+	{ label: 'start', syntax: 'agf start --repo <path> --host <codex|claude|opencode> --message-stdin [--json]', description: 'initialize, record the owner message, and return one bounded intake result' },
 	{ label: 'close', syntax: 'agf close --manifest-stdin [--push-authorized]', description: 'validate, replace, commit, and optionally push one prepared closeout manifest' },
 	{ label: 'init', syntax: 'agf init', description: 'create Agentflow records, ignore entries, and project hooks in one repeatable action' },
 	{ label: 'new', syntax: 'agf new <name> [taskkey] [-m "first ask"]', description: 'open a stream and write its initial notebook; root records stay with the agent' },
@@ -165,7 +165,7 @@ const parse_start_args = (argv) => {
 		return { error: `unknown start option "${flag}"` }
 	}
 	if (!result.repo) return { error: 'start requires --repo <path>' }
-	if (!['codex', 'claude'].includes(result.host)) return { error: 'start requires --host <codex|claude>' }
+	if (!['codex', 'claude', 'opencode'].includes(result.host)) return { error: 'start requires --host <codex|claude|opencode>' }
 	if (!result.message_stdin) return { error: 'start requires --message-stdin' }
 	return result
 }
@@ -195,7 +195,7 @@ const update_ignore_file = (repo) => {
 	const current = fs.existsSync(ignore_path) ? fs.readFileSync(ignore_path, 'utf8') : ''
 	const lines = current.split(/\r?\n/u).filter(Boolean)
 	const next = [...lines]
-	for (const entry of ['.claude/', '.codex/', '.worktrees/']) if (!next.includes(entry)) next.push(entry)
+	for (const entry of ['.claude/', '.codex/', '.opencode/', '.worktrees/']) if (!next.includes(entry)) next.push(entry)
 	const text = `${next.join('\n')}\n`
 	if (text !== current) ag_settings.write_text_atomic(ignore_path, text)
 	return ignore_path
@@ -893,7 +893,7 @@ const host_from_root_status = (repo) => {
 	if (!fs.existsSync(notebook)) return ''
 	const text = fs.readFileSync(notebook, 'utf8')
 	if (!ag_settings.validate_status_projection(text).valid) return ''
-	const match = /^Configuration:\s+[^\r\n]+\s+for\s+(codex|claude)\s+this round\.$/mu.exec(ag_settings.status_region(text).body)
+	const match = /^Configuration:\s+[^\r\n]+\s+for\s+(codex|claude|opencode)\s+this round\.$/mu.exec(ag_settings.status_region(text).body)
 	return match ? match[1] : ''
 }
 

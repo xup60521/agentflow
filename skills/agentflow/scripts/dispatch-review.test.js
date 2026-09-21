@@ -156,6 +156,20 @@ node_test.test('worker invocation passes the configured effort for each supporte
     brief,
   )
   node_assert.deepEqual(claude, ['-p', '--model', 'claude-opus-4-6', '--effort', 'high', '--verbose', brief])
+
+  const opencode = worker_invocation(
+    { profile: { family: 'opencode' }, args: ['run'], model: 'openai/gpt-5', effort: 'thinking-plus' },
+    [],
+    brief,
+  )
+  node_assert.deepEqual(opencode, ['run', '--model', 'openai/gpt-5', '--variant', 'thinking-plus', '--format', 'json', brief])
+
+  const providerDefault = worker_invocation(
+    { profile: { family: 'opencode' }, args: ['run'], model: 'openai/gpt-5', effort: 'default' },
+    [],
+    brief,
+  )
+  node_assert.deepEqual(providerDefault, ['run', '--model', 'openai/gpt-5', '--format', 'json', brief])
 })
 
 node_test.test('worker invocation refuses an unsupported family rather than silently dropping the effort', () => {
