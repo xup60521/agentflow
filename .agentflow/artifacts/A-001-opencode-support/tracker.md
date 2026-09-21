@@ -10,19 +10,19 @@
 
 - **Last update:** 2026-09-21 15:29:52 +0800.
 
-- **Evidence commit:** uncommitted.
+- **Evidence commit:** uncommitted review correction.
 
 ## Overall state
 
 - **State:** active.
 
-- **Reason:** The requested implementation plan is saved and validated; evidence commit and closeout remain.
+- **Reason:** Independent review found a current OpenCode plugin-path correction and an unnecessary discovery subsystem; the plan is being corrected and re-reviewed.
 
-- **Total:** 2.
+- **Total:** 3.
 
 - **Completed:** 2.
 
-- **Remaining:** 0.
+- **Remaining:** 1.
 
 ## Accepted task checklist
 
@@ -30,19 +30,21 @@
 
 - [x] **T-2:** Validate the plan artifact and final changed-path scope, then record the completed planning round. Proof: tracker validation passed, the saved plan was read back, and Git status/diff showed only the Agentflow bootstrap and requested planning artifacts. Source: A-001.
 
+- [ ] **T-3:** Correct the independent review findings, re-run the bounded cross-check, and close only on PASS. Proof: corrected plan commit, accepted review report, tracker validation, and Agentflow closeout. Source: A-001.
+
 ## Accepted scope changes
 
 - None.
 
 ## Current recovery
 
-- **Current item:** Closeout.
+- **Current item:** Review correction.
 
-- **Last proven result:** The implementation plan and tracker passed saved-file inspection, tracker validation, and final scope review.
+- **Last proven result:** First review returned Conformance PASS but Outcome and Minimality BLOCKING on `.opencode/plugins/` and mandatory discovery scope.
 
 - **Active blocker or running process:** None.
 
-- **Next safe action:** Commit the validated plan, record its evidence commit, and close the planning round.
+- **Next safe action:** Commit the corrected plan and run the same bounded cross-check again.
 
 - **Expected changed files:** `.agentflow/artifacts/A-001-opencode-support/design.md`, `.agentflow/artifacts/A-001-opencode-support/tracker.md`, `.agentflow/devlog.md`, `.gitignore`, `ag.json`.
 
@@ -54,7 +56,7 @@
 
 - **Operation running:** no.
 
-- **Next action remaining:** evidence commit and closeout.
+- **Next action remaining:** corrected-plan cross-check and closeout.
 
 - **Evidence status:** current.
 

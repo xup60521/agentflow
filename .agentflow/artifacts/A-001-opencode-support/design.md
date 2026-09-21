@@ -6,7 +6,7 @@
 
 - Represent a worker selection as separate `model` and `effort` fields. This is required because OpenCode model IDs use `provider/model`, while reasoning effort is passed independently as `--variant`.
 
-- Discover available OpenCode models at runtime with `opencode models`; do not hard-code a provider or model catalog. Validate syntax locally and let OpenCode remain authoritative for provider authentication, model availability, and provider-specific variants.
+- Accept the user's explicit OpenCode `provider/model` and reasoning variant without hard-coding a catalog. Let OpenCode remain authoritative for provider authentication, model availability, and provider-specific variants; document `opencode models` as the user's discovery command.
 
 - Deliver the work as a schema migration, host adapter, OpenCode plugin/hook integration, tests, documentation, and a real terminal journey.
 
@@ -67,7 +67,7 @@
 
 - Permit `/` in structured `model` values while retaining control-character, length, and literal-argument safety checks. Validate `effort` as a bounded safe token, not as a fixed enum.
 
-- Add an `opencode-default` profile only when OpenCode is the initializing host or the user explicitly adds it. Do not invent default provider/model values. Setup should obtain them from explicit flags or an interactive selection backed by `opencode models`.
+- Add an `opencode-default` profile only when OpenCode is the initializing host or the user explicitly adds it. Do not invent default provider/model values. Setup obtains both values from explicit flags; users can run `opencode models` themselves to choose an identifier.
 
 - Recommended setup interface:
 
@@ -106,15 +106,15 @@
 
 - Add collision tests proving `openai/gpt-5` plus `high` cannot be confused with another model or effort.
 
-### 3. Add OpenCode discovery and preflight
+### 3. Add bounded OpenCode preflight
 
-- Implement a bounded `opencode models` adapter using literal arguments, closed stdin, output-size limits, and timeouts.
+- Verify that the OpenCode executable is spawnable before dispatch. Keep authentication, model availability, and variant compatibility as execution-time checks owned by OpenCode.
 
-- Parse only canonical `provider/model` identifiers. Present discovered values for user selection but allow an explicit safe identifier for custom providers whose live discovery is unavailable.
+- Validate the explicitly supplied identifier as canonical `provider/model` and the variant as a bounded safe token. Never require membership in an Agentflow catalog.
 
-- Preflight verifies the executable exists and, when requested, that the selected model appears in current discovery output. Authentication and variant compatibility remain execution-time checks owned by OpenCode.
+- Document `opencode models [provider]` as the authoritative user-facing discovery command.
 
-- Never run `--refresh` automatically because it performs network work and can change the local model cache; expose it only through an explicit user action.
+- Defer an Agentflow-owned interactive discovery/parser/cache subsystem until separately requested. If added later, never run `--refresh` automatically because it performs network work and changes local state.
 
 ### 4. Add OpenCode worker dispatch
 
@@ -130,7 +130,7 @@
 
 - Install Agentflow as an OpenCode-discoverable skill under `.opencode/skills/agentflow/` or through an explicit `skills` source, reusing the canonical skill files rather than maintaining a divergent copy.
 
-- Add a project OpenCode plugin under `.opencode/plugin/` that maps prompt submission to `notebook-write.js append-input` and `session.idle` to the existing closeout referee.
+- Add a project OpenCode plugin under `.opencode/plugins/` that maps prompt submission to `notebook-write.js append-input` and `session.idle` to the existing closeout referee.
 
 - Define and test the exact event-to-payload translation, including project `cwd`, session identity, prompt text, duplicate-event protection, and failure reporting.
 
@@ -162,7 +162,7 @@
 
 - **Dispatch tests:** exact OpenCode argument array, omitted default variant, JSONL final-response extraction, nonzero exit, auth/model/variant errors, output truncation, closed stdin, clone isolation, and Windows launcher behavior.
 
-- **Plugin tests:** prompt capture once, session-idle closeout, non-Agentflow no-op, malformed event handling, unrelated configuration preservation, idempotent install, and ownership-safe uninstall.
+- **Plugin tests:** loading from `.opencode/plugins/`, prompt capture once, session-idle closeout, non-Agentflow no-op, malformed event handling, unrelated configuration preservation, idempotent install, and ownership-safe uninstall.
 
 - **Regression tests:** run existing Codex and Claude settings, hook, dispatch, closeout, alignment, Windows, and release suites unchanged except for expanded host matrices.
 
@@ -202,7 +202,7 @@
 
 - **Variants differ by provider and model.** Pass safe explicit values through, support `default`, and report OpenCode's validation error without guessing a substitute.
 
-- **Model discovery may be stale.** Treat discovery as assistance, not an allowlist; require explicit `--refresh` for network-backed updates.
+- **Users may select a stale or unavailable model.** Point them to `opencode models`; preserve OpenCode's bounded error without guessing a substitute.
 
 - **JSONL output can evolve.** Preserve bounded raw diagnostics, test known event shapes, and fail clearly when no final assistant message is recoverable.
 
@@ -214,7 +214,7 @@
 
 - **Simpler alternative considered:** append `/effort` to `provider/model`. Rejected because parsing is ambiguous and the existing model grammar rejects provider-qualified IDs.
 
-- **Why each remaining part is needed:** schema migration preserves existing users; discovery avoids a hard-coded catalog; plugin integration supplies prompt/stop semantics; dispatch adaptation supplies exact model/variant control; regression and PTY tests protect the existing two hosts and prove the new terminal boundary.
+- **Why each remaining part is needed:** schema migration preserves existing users; explicit safe input avoids a hard-coded catalog without adding a discovery subsystem; plugin integration supplies prompt/stop semantics; dispatch adaptation supplies exact model/variant control; regression and PTY tests protect the existing two hosts and prove the new terminal boundary.
 
 ## Implementation checkpoint
 
