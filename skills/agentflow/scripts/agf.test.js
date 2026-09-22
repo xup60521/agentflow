@@ -2446,7 +2446,7 @@ test('stream_doc accepts only the canonical notebook name', () => {
 	fs.writeFileSync(path.join(dir, '.agentflow/features', 'new', 'new.devlog.md'), 'x')
 	fs.mkdirSync(path.join(dir, '.agentflow/features', 'old'), { recursive: true })
 	fs.writeFileSync(path.join(dir, '.agentflow/features', 'old', 'devlog.md'), 'x')
-	assert.equal(agf.stream_doc(dir, 'new'), path.join('.agentflow/features', 'new', 'new.devlog.md'))
+	assert.equal(agf.stream_doc(dir, 'new'), '.agentflow/features/new/new.devlog.md')
 	assert.equal(agf.stream_doc(dir, 'old'), '')
 	assert.equal(agf.stream_doc(dir, 'missing'), '')
 	drop(dir)
