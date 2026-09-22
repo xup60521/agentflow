@@ -15,6 +15,7 @@ const setup = require('./setup.js')
 const intake = require('./resume-intake.js')
 const settings = require('./ag-settings.js')
 const { send_tree_signal } = require('./process-tree.js')
+const agf = require('./agf.js')
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'agentflow-windows-'))
 const drop = directory => fs.rmSync(directory, { recursive: true, force: true })
@@ -143,4 +144,15 @@ test('Windows cancellation terminates descendants', { skip: process.platform !==
     try { send_tree_signal(child, 'SIGKILL') } catch {}
     if (descendant) { try { process.kill(descendant) } catch {} }
   }
+})
+
+test('stream notebook paths stay POSIX so Git object comparisons match on Windows', () => {
+  const directory = tmp()
+  try {
+    fs.writeFileSync(path.join(directory, 'ag.json'), config())
+    const doc = '.agentflow/features/login-page/login-page.devlog.md'
+    fs.mkdirSync(path.join(directory, '.agentflow', 'features', 'login-page'), { recursive: true })
+    fs.writeFileSync(path.join(directory, doc), notebook('open the stream'))
+    assert.equal(agf.stream_doc(directory, 'login-page'), doc)
+  } finally { drop(directory) }
 })
