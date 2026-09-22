@@ -206,7 +206,7 @@ const update_ignore_file = (repo) => {
 	const current = fs.existsSync(ignore_path) ? fs.readFileSync(ignore_path, 'utf8') : ''
 	const lines = current.split(/\r?\n/u).filter(Boolean)
 	const next = [...lines]
-	for (const entry of ['.claude/', '.codex/', '.worktrees/']) if (!next.includes(entry)) next.push(entry)
+	for (const entry of ['.claude/', '.codex/', '.opencode/', '.worktrees/']) if (!next.includes(entry)) next.push(entry)
 	const text = `${next.join('\n')}\n`
 	if (text !== current) ag_settings.write_text_atomic(ignore_path, text)
 	return ignore_path

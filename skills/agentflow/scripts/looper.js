@@ -1273,6 +1273,8 @@ const configured_worker_args = (context, base_args) => {
     return [...base_args, '-m', context.worker_model, '-c', `model_reasoning_effort=${context.worker_effort}`]
   if (context.worker_family === 'claude')
     return [...base_args, '--model', context.worker_model, '--effort', context.worker_effort]
+	if (context.worker_family === 'opencode')
+		return [...base_args, '--model', context.worker_model, ...(context.worker_effort === 'default' ? [] : ['--variant', context.worker_effort]), '--format', 'json']
   throw looper_error(`configured model and effort cannot be applied to unsupported worker family ${context.worker_family || '<missing>'}`)
 }
 
@@ -2128,6 +2130,7 @@ module.exports = {
   render_help,
   run_looper,
   claim_host_plan,
+	configured_worker_args,
   finish_host_plan,
   workspace_defaults,
   write_all_sync,

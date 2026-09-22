@@ -415,6 +415,12 @@ const path_is_inside_real_root = (root, target) => {
 }
 
 const parse_model_value = value => {
+	if (is_plain_object(value)) {
+		if (typeof value.model !== 'string' || typeof value.effort !== 'string') return null
+		if (value.model.length > 128 || value.effort.length > 32 || is_control_text(value.model) || is_control_text(value.effort)) return null
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)+$/u.test(value.model) || !/^[A-Za-z][A-Za-z0-9_-]*$/u.test(value.effort)) return null
+		return { model: value.model, effort: value.effort, value }
+	}
 	if (typeof value !== 'string') return null
 	const slash = value.lastIndexOf('/')
 	if (slash <= 0 || slash === value.length - 1) return null
@@ -455,15 +461,17 @@ const executable_available = (command, options = {}) => {
 const executable_availability = (options = {}) => ({
 	codex: executable_available('codex', options),
 	claude: executable_available('claude', options),
+	opencode: executable_available('opencode', options),
 })
 
 const profile_family = profile => {
 	if (typeof profile.family === 'string' && profile.family.length > 0) return profile.family
-	if (!profile.tiers || !tier_names.every(tier => typeof profile.tiers[tier] === 'string')) return ''
+	if (!profile.tiers || !tier_names.every(tier => parse_model_value(profile.tiers[tier]) !== null)) return ''
 	const models = tier_names.map(tier => parse_model_value(profile.tiers[tier])).filter(Boolean).map(parsed => parsed.model)
 	if (models.length !== tier_names.length) return ''
 	if (models.every(model => model.startsWith('gpt-'))) return 'codex'
 	if (models.every(model => model.startsWith('claude-'))) return 'claude'
+	if (models.every(model => model.includes('/'))) return 'opencode'
 	return ''
 }
 
