@@ -21,6 +21,13 @@ Artifacts: .agentflow/features/thin-customization/artifacts/A-003-windows-stream
 Archived eras: none.
 
 Streams: none.
+
+Backlink: main notebook `.agentflow/devlog.md` (main checkout)
+
+Feature: thin-customization — closed
+
+Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The main-notebook `stream:` pointer line was deliberately NOT written — the next main-checkout session re-derives it from `.agentflow/features/*/*devlog.md`.
+
 ---
 
 # → Ask / A-001 (xup60521)
