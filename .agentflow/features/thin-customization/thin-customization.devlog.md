@@ -4,30 +4,23 @@ Project: agentflow
 
 Notebook: .agentflow/features/thin-customization/thin-customization.devlog.md — stream.
 
-Current commit: f7ff2fa6b4c7ba92953c2e7c0dd09acc7802119b — Windows stream path 修正，已通過獨立 review.
+Current commit: 95423d76a91e6f130af985d4bf4c8901d11f8ef5 已交付至 origin/main；本輪僅新增記錄.
 
-Tests/scenarios: windows.test.js 7/7；agf.test.js 100 pass / 37 既存失敗；真實 PowerShell finish --deliver journey exit 0.
+Tests/scenarios: 沿用 A-003 證據；本輪無程式碼變更，未重跑測試.
 
 Configuration: .agentflow/features/thin-customization/ag.json — schema v8; validated for claude this round.
 
-Proven: agf finish --deliver 在 native Windows 上可完整交付.
+Proven: upstream 738d0b3 已含相同修正，送 PR 會是空 diff；agfnow/agentflow 目前沒有任何 PR.
 
-Open: stream 記錄仍未 fast-forward 回 fork main，因主 checkout 有 A-001 未提交改動；upstream PR 與 worktree 清理待回覆.
+Open: 兩個 Windows 分支是否送 upstream PR 待回覆；本機 main 仍落後 origin/main，cleanup 受阻.
 
-Next: 待 owner 回覆 upstream PR 與 cleanup，並在主 checkout 收尾 A-001 後重試交付.
+Next: 待 owner 回覆 PR 與 A-001 收尾方式.
 
 Artifacts: .agentflow/features/thin-customization/artifacts/A-003-windows-stream-path/.
 
 Archived eras: none.
 
 Streams: none.
-
-Backlink: main notebook `.agentflow/devlog.md` (main checkout)
-
-Feature: thin-customization — closed
-
-Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The main-notebook `stream:` pointer line was deliberately NOT written — the next main-checkout session re-derives it from `.agentflow/features/*/*devlog.md`.
-
 ---
 
 # → Ask / A-001 (xup60521)
@@ -324,5 +317,80 @@ Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The mai
 ---
 
 # → Ask / A-004 (xup60521)
+
++ file the PR
+  why not clean it?
+
+## [RUN-001] Event — 2026-09-22 23:52:24 +0800 (A-004)
+
+- 準備送 upstream PR 時發現無 PR 可送：fetch 後的最新 `upstream/main` `738d0b3` 已包含完全相同的修正（`agf.js:970` 為 `path.posix.join`，`agf.test.js:2730` 期望值已是字面 POSIX 路徑），且多了以 `path.win32.join` 模擬 Windows 的測試。已刪除剛建立的 `upstream/stream-path-83` 分支與其 worktree，未送出空的 PR。
+
+- 查證 A-002 記載的 upstream PR #10 與 #11 並不存在：`gh pr list --repo agfnow/agentflow --state all` 為空，依 head 過濾亦為空。實際存在的只有推到 fork 的兩個分支。
+
+- 那兩個分支對最新 upstream 仍有實質差異：`upstream/powershell-setup-83` 動 `setup.js` 與 `windows.test.js`；`upstream/windows-process-tree-83` 動 `external-runner.js`、`process-tree.js` 與 `windows.test.js`。
+
+- 回答清理問題：`agf cleanup` 的 guard 3（`agf.js:1984-1988`）拒絕在目標 worktree 內執行，且需要主 checkout 能合併 stream；目前本機 `main` 仍停在 `413cb7d` 且有 A-001 未提交改動，故尚不能清理。
+
+# ← Reply / A-004
+
+* _2026-09-22 23:52:24 +0800 (host/unknown)_
+
+## [SUMMARY]
+
+- 沒有 PR 可送。upstream 在最新 release `738d0b3` 已經自己修好同一個 bug，改法和我們一字不差，而且測試比我們的更強。我沒有送出空的 PR。
+
+- 查證時發現一件你應該知道的事：A-002 記錄的 upstream PR #10 與 #11 並不存在，`agfnow/agentflow` 目前一個 PR 都沒有。那兩個只是推到 fork 的分支。
+
+- 「為什麼不清掉」：不是不該清，是現在清不了，兩個前置條件還沒滿足。
+
+## [FINAL REPORT]
+
+1. file the PR
+
+   - 我照前面的做法，以剛 fetch 的最新 `upstream/main`（`738d0b3`）開了分支要送 PR，結果 diff 是空的。
+
+   - upstream 的 `skills/agentflow/scripts/agf.js:970` 已經是 `path.posix.join`；`agf.test.js:2730` 的期望值也已經改成字面的 POSIX 路徑。跟我們的修正完全相同。
+
+   - upstream 還多做了一步：在 `agf.test.js` 裡用 `path.win32.join` 模擬 Windows 的路徑組合，讓這個缺陷在任何平台都能被測出來。我們的 `windows.test.js` 測試只有在 Windows 上才會失敗，所以 upstream 的版本更強，沒有東西可以補。
+
+   - 我已經把剛建立的 `upstream/stream-path-83` 分支與 worktree 刪掉，沒有送出空的 PR。
+
+   - 我們 fork 上的修正仍然有價值：它讓停在 8.2 基底的 fork 現在就能正常交付，不必等升到 8.3。
+
+2. 關於 PR #10 / #11 的更正
+
+   - 查證方式：`gh pr list --repo agfnow/agentflow --state all` 回傳空清單；再以 `upstream/powershell-setup-83` 這個 head 過濾，同樣沒有結果。
+
+   - 結論：A-002 的 RUN-005 記載的「PowerShell PR #10」「Windows process-tree PR #11」不正確，那兩個 PR 從來沒有被開出來。實際存在的是推到 fork 的分支 `origin/upstream/powershell-setup-83`（`18e01c7`）與 `origin/upstream/windows-process-tree-83`（`73e0122`）。
+
+   - 這兩個分支對最新的 `upstream/main` 仍有實質內容：前者改 `setup.js` 與 `windows.test.js`（97 行增減），後者改 `external-runner.js`、`process-tree.js` 與 `windows.test.js`（91 行增減）。它們沒有被 upstream 的新版吸收，所以還是值得送。
+
+3. 「為什麼不清掉？」
+
+   - 我的建議預設是「先不要清」，意思是「現在還不能清」，不是「不該清」。有兩個前置條件：
+
+   - 條件一：`agf cleanup` 的 guard 3（`skills/agentflow/scripts/agf.js:1984-1988`）會拒絕在目標 worktree 裡執行，因為它要刪的正是目前 session 的工作目錄。必須先離開這個 worktree，從主 checkout 執行。
+
+   - 條件二：cleanup 需要主 checkout 在 default branch 並且能合併 stream。目前本機 `main` 還停在 `413cb7d`，而且 `skills/agentflow/scripts/agf.js` 有 A-001 未提交的改動。這正是上一輪交付只更新了 `origin/main`、卻無法更新本機 checkout 的原因；cleanup 會撞到同一道牆。
+
+   - 解除方式：先在主 checkout 把 A-001 收尾並提交，再 `git merge --ff-only origin/main`，然後從主 checkout 執行 `agf cleanup thin-customization`。notebook 與 artifacts 會保留，只刪 branch 與 worktree。
+
+## Questions (batched — each with a suggested default)
+
+1. 那兩個確實還有內容的 Windows 分支要不要正式送成 upstream PR？另外提醒：`agfnow/agentflow` 的 REST `pulls` 端點回 404，實際能不能開 PR 要試過才知道。
+
+   - Suggested default: `是，兩個都送`
+
+   - ans:
+
+2. 要不要我直接在主 checkout 把 A-001 收尾並提交，好讓本機 main 追上、解除 cleanup 的阻擋？那一輪是另一個 session 的工作，所以我預設不碰。
+
+   - Suggested default: `否，我自己在主 checkout 收尾`
+
+   - ans:
+
+---
+
+# → Ask / A-005 (xup60521)
 
 +
