@@ -4,30 +4,23 @@ Project: agentflow
 
 Notebook: .agentflow/features/thin-customization/thin-customization.devlog.md — stream.
 
-Current commit: 本輪 stream 收尾提交；reviewed overlay implementation 1b785e995be092cb06d1d3945ea9e94b59fcb8e4 在 migration/upstream-8.3-overlay.
+Current commit: f7ff2fa6b4c7ba92953c2e7c0dd09acc7802119b — Windows stream path 修正，已通過獨立 review.
 
-Tests/scenarios: Windows 聚焦測試 9/9、PowerShell PR 3/3、process-tree PR 2/2、native OpenCode 1.18.30 PTY journey.
+Tests/scenarios: windows.test.js 7/7；agf.test.js 100 pass / 37 既存失敗；真實 PowerShell finish --deliver journey exit 0.
 
 Configuration: .agentflow/features/thin-customization/ag.json — schema v8; validated for claude this round.
 
-Proven: 兩個 upstream PR head 與 OpenCode overlay 皆取得獨立 review 三項 PASS.
+Proven: agf finish --deliver 在 native Windows 上可完整交付.
 
-Open: stream 記錄尚未 fast-forward 回 fork main；是否清除 branch 與 worktree 待回覆.
+Open: stream 記錄仍未 fast-forward 回 fork main，因主 checkout 有 A-001 未提交改動；upstream PR 與 worktree 清理待回覆.
 
-Next: 執行 agf finish --prep 與 --deliver，並由主 checkout 記錄 pointer 收尾.
+Next: 待 owner 回覆 upstream PR 與 cleanup，並在主 checkout 收尾 A-001 後重試交付.
 
-Artifacts: .agentflow/features/thin-customization/artifacts/A-002-upstream-83-migration/.
+Artifacts: .agentflow/features/thin-customization/artifacts/A-003-windows-stream-path/.
 
 Archived eras: none.
 
 Streams: none.
-
-Backlink: main notebook `.agentflow/devlog.md` (main checkout)
-
-Feature: thin-customization — closed
-
-Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The main-notebook `stream:` pointer line was deliberately NOT written — the next main-checkout session re-derives it from `.agentflow/features/*/*devlog.md`.
-
 ---
 
 # → Ask / A-001 (xup60521)
@@ -217,5 +210,112 @@ Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The mai
 ---
 
 # → Ask / A-003 (xup60521)
+
++ So it's a bug? Fix it. Especially it is a windows bug
+
+## [RUN-001] Event — 2026-09-22 17:33:46 +0800 (A-003)
+
+- 確認並修正 Windows 缺陷：`stream_doc` 以 `path.join` 組出 repository-relative 路徑，在 Windows 產生反斜線分隔的路徑，與 `git ls-tree` 的正斜線輸出比對失敗，`closing_record` 因此誤判 stream notebook 不是一般檔案。改用 `path.posix.join`，commit `29391a7`；同時修正 `agf.test.js` 內把平台分隔字元寫進契約的期望值，commit `f7ff2fa`。
+
+- 先以失敗測試證明缺陷：新增 `windows.test.js` 的 `stream notebook paths stay POSIX so Git object comparisons match on Windows`，修正前實際值為反斜線分隔，與期望的正斜線不符。
+
+- 測試證據：Windows `windows.test.js` 7/7；`agf.test.js` 修正前 86 pass / 51 fail，修正後 100 pass / 37 fail，逐項比對無新增失敗。
+
+- 真實 Windows PowerShell 5.1 journey：`agf init` → `agf new` → 標記 `Feature: login-page — closed` → `agf finish --prep` → `agf finish --deliver`，輸出 `delivered login-page to the local main checkout`，exit 0，`main` 與 stream tip 同為 `bf071f2`。
+
+- 獨立 review：codex profile 回報用量上限，依 delegation 規則改用另一個 eligible profile `claude-default`（claude-opus-4-6/high）。做法是暫時把 `codex-default` 的 priority 由 3 降為 2，派送後把 `ag.json` 還原為原始位元組。限制：reviewer 與 host 同 family。
+
+- Review 共 3 次啟動：前兩次報告不符欄位契約（欄位行尾附加說明文字、stamp 的星號被跳脫），第三次通過，Outcome／Minimality／Conformance 三項皆 PASS。
+
+# ← Reply / A-003
+
+* _2026-09-22 17:33:46 +0800 (host/unknown)_
+
+## [SUMMARY]
+
+- 是 bug，已修好：`stream_doc` 在 Windows 回傳反斜線分隔的路徑，和 Git 物件查詢用的正斜線路徑比對不上，`agf finish --deliver` 因此誤判 stream notebook 不是一般檔案而中止。
+
+- 真實 Windows PowerShell journey 現在可以完整交付（exit 0），獨立 review 三項 PASS。
+
+- 但這條 stream 的記錄還是沒能 merge 回 fork `main`：主 checkout 的 A-001 有未提交的 `agf.js` 等改動，Git 不會覆蓋它們。需要你先在主 checkout 收尾那一輪。
+
+## [FINAL REPORT]
+
+1. 「所以這是 bug 嗎？」
+
+   - 是，而且是純 Windows 缺陷。`stream_doc`（`skills/agentflow/scripts/agf.js:912`）用 `path.join` 組 repository-relative 路徑，在 Windows 得到反斜線分隔的 `.agentflow features <key> <key>.devlog.md`。
+
+   - `closing_record`（同檔 1553-1561 行）把這個字串交給 `git ls-tree`，Git 回傳的永遠是正斜線路徑，於是 `record.path === doc` 永遠不成立，交付前的檔案檢查就把合法的 notebook 判成「不是一般檔案」。
+
+   - 同一個缺陷也存在於 upstream 8.3（`upstream/main` `63a89e8`）的相同位置。
+
+2. 「修好它」
+
+   - 已修好：`path.join` 改為 `path.posix.join`，生產程式碼只動 1 行，commit `29391a7`。
+
+   - 連帶修正 `agf.test.js:2449` 的期望值——原本用 `path.join` 產生期望字串，等於把平台分隔字元寫進契約；改成字面的 POSIX 路徑，commit `f7ff2fa`。
+
+   - `fs.existsSync(path.join(repo, rel))` 維持原生 `path.join`，Windows 會把正斜線正規化，檔案存在性檢查不受影響。symlink 與非一般檔案的拒絕邏輯完全沒動。
+
+3. 驗證
+
+   - 先寫失敗測試：`windows.test.js` 新增 `stream notebook paths stay POSIX so Git object comparisons match on Windows`，修正前回傳反斜線分隔的路徑，與期望不符。
+
+   - 修正後 `windows.test.js` 7/7 通過。
+
+   - `agf.test.js` 在 Windows：修正前 86 pass / 51 fail，修正後 100 pass / 37 fail。逐項比對確認沒有任何新增失敗；剩下的 37 項在修正前就已失敗，屬於另外的 Windows 問題。
+
+   - 真實使用者旅程（native Windows PowerShell 5.1，非模擬）：`agf init` → `agf new` → 寫入 `Feature: login-page — closed` → `agf finish --prep` → `agf finish --deliver`，終端輸出 `delivered login-page to the local main checkout`，process exit 0，`main` 與 stream tip 同為 `bf071f2`。這正是先前失敗的那條路徑。
+
+4. 獨立 review
+
+   - 結果：Outcome PASS、Minimality PASS、Conformance PASS。報告：`.agentflow/features/thin-customization/artifacts/A-003-windows-stream-path/cross-check-report.md`。
+
+   - 限制一：codex profile 回報用量上限（約 19:27 才恢復），依 delegation 規則改用另一個 eligible profile `claude-default`。因為派送工具沒有停用單一 profile 的參數，我暫時把 `codex-default` 的 priority 由 3 降為 2，派送後把 `ag.json` 還原成原始位元組，並以 `git status` 確認無差異。
+
+   - 限制二：reviewer 與 host 同為 claude family。獨立性來自獨立 process、獨立 clone 與凍結 brief，但不是跨 family。
+
+   - 限制三：共 3 次啟動（上限）。前兩次報告不符欄位契約——第一次五個欄位行尾附加了說明文字，第二次 stamp 的星號被跳脫。第三次通過。
+
+   - 我複核報告後的一點更正：報告把 symlink 防護引述到 `close_validate_manifest()`，實際守門在 `closing_record` 的 `entry.type` 與 `entry.mode` 檢查（`agf.js:1561`）。該處未被本次變更觸及，且 `finish delivery rejects a tracked notebook symlink` 測試通過，結論不受影響。
+
+5. 這條 stream 的交付狀態
+
+   - 仍未 merge 回 fork `main`。原因不是這次的 bug：主 checkout 目前有 A-001 未提交的改動（`skills/agentflow/scripts/agf.js`、`ag-settings.js`、`dispatch-review.js`、`dispatch-review.test.js`，以及三個未追蹤的 `opencode-*.js`）。
+
+   - `agf finish --deliver` 會 fast-forward 主 checkout，而本次修正正好也動到 `agf.js`，Git 不會覆蓋那裡未提交的同檔案改動。
+
+   - 需要的動作：先在主 checkout 把 A-001 那一輪收尾並提交它的改動，之後這條 stream 才能交付。我仍會嘗試一次並在畫面回報實際結果。
+
+6. 順帶發現，未修，列為提案（不在本次 Ask 範圍）
+
+   - `dispatch-review.js:93` 的 `REPORT_STAMP_PATTERN` 不接受時區位移，但報告契約要求 `±HHMM`，所以格式正確的報告反而永遠不會被裁掉前言。
+
+   - `dispatch-review.js` 沒有參數可以實作 delegation 規則寫的「遇到 session limit 就停用該 profile 並改用另一個」。
+
+   - `agf close` 以 `format_status` 重建 STATUS 時不保留 stream 的 `Backlink:` 與 `Feature:` 行，stream 收尾必須額外補寫一次提交（上一輪已回報）。
+
+   - `agf new` 印出的 notebook 路徑混用反斜線與正斜線，屬純顯示問題。
+
+   - `agf.test.js` 在 Windows 仍有 37 項既存失敗，與本次變更無關。
+
+
+## Questions (batched — each with a suggested default)
+
+1. 這個 Windows 修正要不要照前面兩個 Windows PR 的做法，以 `upstream/main` 為 base 另開分支送 upstream PR？同一個缺陷在 upstream 8.3 仍然存在。
+
+   - Suggested default: `是，另開 upstream PR`
+
+   - ans:
+
+2. 這條 stream 交付完成後，要不要在主 checkout 執行 `cleanup:thin-customization`，刪除 branch 與 worktree？notebook 與 artifacts 會保留。（此題由 A-002 延續，尚未回覆。）
+
+   - Suggested default: `否，先保留 worktree`
+
+   - ans:
+
+---
+
+# → Ask / A-004 (xup60521)
 
 +
