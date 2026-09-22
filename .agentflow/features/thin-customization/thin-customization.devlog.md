@@ -60,6 +60,9 @@ Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The mai
 
 + Design Go: 590b74f
 
++ ??
+  ??review ??????????????????????? e.g. powershell ?????????unicode ?????? ????
+
 ---
 
 ## [RUN-001] Event — 2026-09-22 15:26:13 +0800 (A-002)
@@ -83,6 +86,24 @@ Opened by the `agf` shell shortcut on 2026-09-22, not by an agent round. The mai
 - ???? 9/9 ???plugin ???????migration branch ???? origin?
 
 - ?? OpenCode PTY ??? session `ses_f37f5fa28ffeHI0nzdQVEEsbQdx`?? CLI ?? server error `err_96c351d6`????????? model-backed journey?????? Result Go?
+
+## [RUN-004] Event — 2026-09-22 16:08:00 +0800 (A-002)
+
+- 依使用者要求，以真實 Windows 使用者旅程做獨立 review，特別檢查 PowerShell 編碼、Unicode 被替換為 `?`／亂碼、native executable、process tree 與 OpenCode event lifecycle。
+
+- 在 Windows PowerShell 5.1 實際重現 `$OutputEncoding = us-ascii`：繁中與 emoji 經 pipeline 傳入 native process 時會被替換為 `?`。Setup wrapper 現在於呼叫期間使用 UTF-8 no-BOM stdin 並復原原設定；profile 寫入與 uninstall rewrite 使用 UTF-8 BOM。
+
+- Review 亦發現並修正 npm `.cmd` shim、Bun 的 `process.execPath` 指向 `opencode.exe`、plugin debounce race，以及 assistant/orphan event state 未清除。最終 implementation 為 `1b785e995be092cb06d1d3945ea9e94b59fcb8e4`。
+
+- 聚焦測試獨立重跑 9/9 通過；75ms progressive Unicode journey 確認只提交一次完整、byte-correct 的繁中／emoji prompt，且 prompt 先於 Stop。
+
+- 真實 native OpenCode 1.18.30 journey 使用 resolved executable 與免費 model，輸出精確為 `UTF8-OK-繁體`，process exit 0。
+
+- 獨立 reviewer verdict：Outcome PASS、Minimality PASS、Conformance PASS。報告：`artifacts/A-002-upstream-83-migration/cross-check-report.md`。
+
+- 限制：較廣測試中的 generic `portable-host` Git fixture 曾在 30 秒 timeout；plain fixture 通過，且 reviewer 判定與本次 Windows/OpenCode 變更無關，因此未宣稱 full suite green。
+
+- 下一個 consequential action 是推送／建立小型 upstream PR 與後續 overlay 整理；需使用者以 exact current commit 回覆 `Result Go: 1b785e9`。
 
 ## [RUN-003] Event — 2026-09-22 15:37:56 +0800 (A-002)
 
