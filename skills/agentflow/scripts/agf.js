@@ -1848,6 +1848,45 @@ const finish_main = (argv, cwd, log, _ask, width = 80) => {
 
 // ---------- agf new ----------
 
+const LOCAL_ENV_NAMES = new Set(['.env.local', '.env.production'])
+const ENV_SCAN_IGNORES = ['.git', '.worktrees', 'node_modules']
+
+// A feature worktree is a fresh checkout, so the ignored local environment
+// files a remote agent needs to run the project are simply absent. Link rather
+// than copy: an edit on either side has to be visible from the other, or the
+// main checkout and the worktree drift apart without anyone noticing.
+const provision_env_links = (repo, worktree, extra_ignores = []) => {
+	const skip = new Set([...ENV_SCAN_IGNORES, ...extra_ignores.filter(Boolean)])
+	const linked = []
+	const failed = []
+	const visit = directory => {
+		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+			if (entry.isDirectory()) {
+				if (!skip.has(entry.name)) visit(path.join(directory, entry.name))
+				continue
+			}
+			if (!entry.isFile() || !LOCAL_ENV_NAMES.has(entry.name)) continue
+			const source = path.join(directory, entry.name)
+			const relative = path.relative(repo, source)
+			const target = path.join(worktree, relative)
+			fs.mkdirSync(path.dirname(target), { recursive: true })
+			try {
+				fs.symlinkSync(source, target, 'file')
+			} catch (error) {
+				// Symlink creation on Windows needs Developer Mode or elevation. A
+				// hard link needs neither and keeps both names on one inode, so the
+				// contents still cannot diverge. Copying would let them diverge, so
+				// it is not a fallback worth having.
+				if (!['EPERM', 'EACCES', 'UNKNOWN'].includes(error.code)) { failed.push({ relative, reason: error.message }); continue }
+				try { fs.linkSync(source, target) } catch (link_error) { failed.push({ relative, reason: link_error.message }); continue }
+			}
+			linked.push(relative)
+		}
+	}
+	visit(repo)
+	return { linked, failed }
+}
+
 const new_main = (argv, cwd, log, ask, width = 80) => {
 	const args = parse_new_args(argv)
 	if (args.error) { log(`${args.error}\n\n${render_usage(width)}`); return 1 }
@@ -1888,6 +1927,16 @@ const new_main = (argv, cwd, log, ask, width = 80) => {
 
 	const added = git(repo, ['worktree', 'add', wt_rel, '-b', taskkey])
 	if (!added.ok) { log(`git worktree add failed:\n${added.out}`); return 1 }
+
+	// The worktree already exists at this point, so a linking problem must not
+	// abort and strand a half-provisioned branch. Report it and continue.
+	try {
+		const provisioned = provision_env_links(repo, wt, [root_config.switches['workspace-dir']])
+		if (provisioned.linked.length > 0) log(`linked ${provisioned.linked.length} local environment file${provisioned.linked.length === 1 ? '' : 's'} from the main checkout`)
+		for (const failure of provisioned.failed) log(`warning: could not link ${failure.relative} — ${failure.reason}`)
+	} catch (error) {
+		log(`warning: local environment files could not be linked — ${error.message}`)
+	}
 
 	const doc_rel = path.join(feature_root, taskkey, `${taskkey}.devlog.md`)
 	const config_rel = path.join(feature_root, taskkey, 'ag.json')
@@ -2601,7 +2650,7 @@ const main = (argv, cwd, log, ask, width = 80) => {
 module.exports = {
 	kebab_case, is_key, next_key, parse_new_args, parse_clean_args, parse_finish_args, resolve_key,
 	parse_start_args, parse_close_args, render_usage, devlog_template, key_from_path, default_from_origin_head,
-	is_yes, near_keys, stream_doc, host_from_root_status, active_host_for_cli, sanitize_diagnostic, git_timeout_ms, delivery_lock_path, write_all_sync, update_ignore_file, init_main, start_main, close_main, new_main, finish_main, clean_main, ditch_main, uninstall_main, setup_main, hooks_main, settings_main, main,
+	is_yes, near_keys, stream_doc, host_from_root_status, active_host_for_cli, sanitize_diagnostic, git_timeout_ms, delivery_lock_path, write_all_sync, update_ignore_file, provision_env_links, init_main, start_main, close_main, new_main, finish_main, clean_main, ditch_main, uninstall_main, setup_main, hooks_main, settings_main, main,
 }
 
 if (require.main === module) {

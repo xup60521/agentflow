@@ -1380,6 +1380,35 @@ process.exit(result.status === null ? 1 : result.status)
 
 // ----- agf new -----
 
+// A remote agent developing in a worktree needs the same ignored local
+// environment files as the main checkout, and links keep the two from drifting.
+test('new provisions local environment files into the worktree without scanning workspace artifacts', () => {
+	const { dir } = make_repo()
+	for (const relative of ['.env.local', path.join('apps', 'web', '.env.production')]) {
+		fs.mkdirSync(path.dirname(path.join(dir, relative)), { recursive: true })
+		fs.writeFileSync(path.join(dir, relative), `value for ${relative}\n`)
+	}
+	for (const skipped of ['.agentflow', 'node_modules']) {
+		fs.mkdirSync(path.join(dir, skipped), { recursive: true })
+		fs.writeFileSync(path.join(dir, skipped, '.env.local'), 'must not be linked\n')
+	}
+
+	const logs = []
+	const r = agf.main(['new', 'env link', 'env-link'], dir, m => logs.push(m))
+
+	assert.ok(logs.some(line => line === 'linked 2 local environment files from the main checkout'))
+	assert.ok(!logs.some(line => line.startsWith('warning: could not link')))
+	for (const relative of ['.env.local', path.join('apps', 'web', '.env.production')]) {
+		assert.equal(fs.readFileSync(path.join(r.dir, relative), 'utf8'), `value for ${relative}\n`)
+	}
+	assert.ok(!fs.existsSync(path.join(r.dir, '.agentflow', '.env.local')))
+	assert.ok(!fs.existsSync(path.join(r.dir, 'node_modules', '.env.local')))
+
+	// The link has to be live in both directions, not a point-in-time copy.
+	fs.writeFileSync(path.join(dir, '.env.local'), 'rotated\n')
+	assert.equal(fs.readFileSync(path.join(r.dir, '.env.local'), 'utf8'), 'rotated\n')
+})
+
 test('new opens branch, worktree, notebook and commit in a real repo', () => {
 	const { dir, run } = make_repo()
 	const root_config_path = path.join(dir, 'ag.json')
