@@ -41,5 +41,3 @@ export const AgentflowPlugin = async ({ directory }) => ({
     }
   },
 })
-
-export { runHook }
