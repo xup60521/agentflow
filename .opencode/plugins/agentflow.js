@@ -4,7 +4,6 @@ import { join } from 'node:path'
 
 const userMessages = new Map()
 const parts = new Map()
-const timers = new Map()
 
 const runHook = ({ directory, sessionID, turnID, event, prompt }) => {
   const script = join(directory, 'skills', 'agentflow', 'scripts', 'stop-hook.js')
@@ -27,40 +26,36 @@ export const AgentflowPlugin = async ({ directory }) => {
     const info = userMessages.get(messageID)
     const part = parts.get(messageID)
     if (!info || !part || !part.text.trim()) return
-    timers.delete(messageID)
     runHook({ directory, sessionID: info.sessionID || part.sessionID, turnID: messageID, event: 'UserPromptSubmit', prompt: part.text })
     userMessages.delete(messageID)
     parts.delete(messageID)
   }
-  const schedule = messageID => {
-    if (!userMessages.has(messageID) || !parts.has(messageID)) return
-    clearTimeout(timers.get(messageID))
-    timers.set(messageID, setTimeout(() => capture(messageID), 25))
+  const flushSession = sessionID => {
+    for (const [messageID, info] of userMessages) if (info.sessionID === sessionID) capture(messageID)
   }
   return {
   event: async ({ event }) => {
     if (event.type === 'message.updated' && event.properties?.info?.role === 'user') {
       const info = event.properties.info
       userMessages.set(info.id, { sessionID: info.sessionID })
-      schedule(info.id)
+      return
+    }
+    if (event.type === 'message.updated' && event.properties?.info?.role === 'assistant') {
+      flushSession(event.properties.info.sessionID)
       return
     }
     if (event.type === 'message.part.updated') {
       const part = event.properties?.part
       if (!part || part.type !== 'text' || typeof part.text !== 'string') return
       parts.set(part.messageID, { sessionID: part.sessionID, text: part.text })
-      schedule(part.messageID)
       return
     }
     if (event.type === 'session.idle') {
-      for (const [messageID, info] of userMessages) if (info.sessionID === event.properties?.sessionID) capture(messageID)
-      runHook({ directory, sessionID: event.properties?.sessionID, turnID: `idle:${event.properties?.sessionID || ''}`, event: 'Stop' })
-      for (const [messageID, info] of userMessages) if (info.sessionID === event.properties?.sessionID) {
-        clearTimeout(timers.get(messageID))
-        timers.delete(messageID)
-        userMessages.delete(messageID)
-        parts.delete(messageID)
-      }
+      const sessionID = event.properties?.sessionID
+      flushSession(sessionID)
+      runHook({ directory, sessionID, turnID: `idle:${sessionID || ''}`, event: 'Stop' })
+      for (const [messageID, part] of parts) if (part.sessionID === sessionID) parts.delete(messageID)
+      for (const [messageID, info] of userMessages) if (info.sessionID === sessionID) userMessages.delete(messageID)
     }
   },
   }
