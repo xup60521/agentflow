@@ -10,7 +10,7 @@ const runHook = ({ directory, sessionID, turnID, event, prompt }) => {
   const script = join(directory, 'skills', 'agentflow', 'scripts', 'stop-hook.js')
   if (!existsSync(script)) return
   const payload = JSON.stringify({ cwd: directory, session_id: sessionID, turn_id: turnID, hook_event_name: event, ...(prompt === undefined ? {} : { prompt }) })
-  const result = spawnSync(process.execPath, [script, '--host', 'opencode'], {
+  const result = spawnSync('node', [script, '--host', 'opencode'], {
     cwd: directory,
     input: payload,
     encoding: 'utf8',
