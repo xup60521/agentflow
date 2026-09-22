@@ -873,7 +873,7 @@ const configure_child = (context) => {
     throw looper_error(`No permitted external executor is available. Resume this pending queue in an interactive host: ${context.tasks_dir}. ${selection.requirement || ''}`, { handoff: true })
   }
   const profile = profiles.find(candidate => candidate.candidate_id === selection.candidate_id)
-  context.executable = profile.command[0]
+  context.executable = agentflow_settings.resolve_executable(profile.command[0]) || profile.command[0]
   context.command_args = profile.command.slice(1)
   context.worker_family = agentflow_settings.profile_family(profile) || null
   context.worker_model = selection.usable_model === 'inherited' ? null : selection.usable_model

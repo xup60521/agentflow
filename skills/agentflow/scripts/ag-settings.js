@@ -431,6 +431,32 @@ const parse_model_value = value => {
 	return { model, effort, value }
 }
 
+const resolve_executable = (command, options = {}) => {
+	if (typeof command !== 'string' || command.length === 0) return null
+	if (options.executables !== undefined) return executable_available(command, options) ? command : null
+	const path_value = options.path_value === undefined ? process.env.PATH : options.path_value
+	if (typeof path_value !== 'string') return null
+	for (const directory of path_value.split(node_path.delimiter)) {
+		if (!directory) continue
+		const clean = process.platform === 'win32' ? directory.replace(/^"|"$/g, '') : directory
+		const direct = process.platform === 'win32' ? [`${command}.exe`, `${command}.com`] : [command]
+		for (const name of direct) {
+			const candidate = node_path.join(clean, name)
+			try { if (node_fs.statSync(candidate).isFile() && (process.platform === 'win32' || (node_fs.statSync(candidate).mode & 0o111) !== 0)) return candidate } catch {}
+		}
+		if (process.platform !== 'win32') continue
+		const wrapper = node_path.join(clean, `${command}.cmd`)
+		try {
+			const text = node_fs.readFileSync(wrapper, 'utf8')
+			const match = /["']?%dp0%[\\/]([^"'\r\n]+\.exe)["']?/iu.exec(text)
+			if (!match) continue
+			const candidate = node_path.resolve(clean, match[1])
+			if (node_fs.statSync(candidate).isFile()) return candidate
+		} catch {}
+	}
+	return null
+}
+
 const executable_available = (command, options = {}) => {
 	if (options.executables !== undefined) {
 		if (Array.isArray(options.executables)) return options.executables.includes(command)
@@ -438,24 +464,7 @@ const executable_available = (command, options = {}) => {
 	}
 	if (typeof options.command_exists === 'function') return options.command_exists(command) === true
 
-	const path_value = options.path_value === undefined ? process.env.PATH : options.path_value
-	if (typeof path_value !== 'string') return false
-	for (const directory of path_value.split(node_path.delimiter)) {
-		if (!directory) continue
-		// Windows spawns without a shell, so an extensionless npm shim is a POSIX
-		// script that cannot start and must not count as available. Availability has
-		// to fail closed here or profile selection picks a worker that dies at spawn.
-		const names = process.platform === 'win32' ? [`${command}.exe`, `${command}.com`] : [command]
-		for (const name of names) {
-			const candidate = node_path.join(process.platform === 'win32' ? directory.replace(/^"|"$/g, '') : directory, name)
-			try {
-				if (node_fs.statSync(candidate).isFile() && (process.platform === 'win32' || (node_fs.statSync(candidate).mode & 0o111) !== 0)) return true
-			} catch (error) {
-				// The next PATH entry is the only useful response to a missing file.
-			}
-		}
-	}
-	return false
+	return resolve_executable(command, options) !== null
 }
 
 const executable_availability = (options = {}) => ({
@@ -1749,7 +1758,7 @@ const resolve_profile_tier = (profile, tier) => {
 	if (tier_name_error(tier) || !parsed || !Array.isArray(profile.command)) throw new SettingsError('selected external-worker profile has an invalid tier or command', { code: 'AG_DISPATCH_INVALID' })
 	return {
 		profile,
-		executable: profile.command[0],
+		executable: resolve_executable(profile.command[0]) || profile.command[0],
 		args: profile.command.slice(1),
 		model: parsed.model,
 		effort: parsed.effort,
@@ -2102,6 +2111,7 @@ module.exports = {
 	workspace_dir_for,
 	workspace_paths,
 	parse_model_value,
+	resolve_executable,
 	select_profile,
 	profile_family,
 	resolve_config_path,

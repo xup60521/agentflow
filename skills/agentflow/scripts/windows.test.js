@@ -52,6 +52,11 @@ test('Windows executable discovery requires a native executable extension', { sk
     assert.equal(settings.executable_available('codex', { path_value: root }), false)
     fs.writeFileSync(path.join(root, 'claude.exe'), '')
     assert.equal(settings.executable_available('claude', { path_value: root }), true)
+    const native = path.join(root, 'node_modules', 'opencode-ai', 'bin')
+    fs.mkdirSync(native, { recursive: true })
+    fs.writeFileSync(path.join(native, 'opencode.exe'), '')
+    fs.writeFileSync(path.join(root, 'opencode.cmd'), '@ECHO off\r\n"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe" %*\r\n')
+    assert.equal(settings.resolve_executable('opencode', { path_value: root }), path.join(native, 'opencode.exe'))
   } finally { drop(root) }
 })
 
