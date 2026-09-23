@@ -1361,7 +1361,7 @@ const make_unvalidated_tip = (run, wt, key, validated_tip) => {
 
 const drop = (...dirs) => dirs.filter(Boolean).forEach((d) => fs.rmSync(d, { recursive: true, force: true }))
 
-const shell_quote = value => `'${String(value).replace(/'/g, "'\\''")}'`
+const { shell_quote, command_chain } = agf
 
 // Windows resolves a bare "git" only to git.com/git.exe, so the Node wrapper
 // needs a native launcher that passes its raw command line through unchanged.
@@ -1525,7 +1525,7 @@ test('new opens branch, worktree, notebook and commit in a real repo', () => {
 		'root stream pointer not written — the next `godev` in the main project folder adds it',
 		'',
 		'exit the current host, then continue in the stream:',
-		`cd '${r.dir}' && codex`,
+		command_chain(`cd ${shell_quote(r.dir)}`, 'codex'),
 	])
 	drop(dir)
 })
@@ -1558,9 +1558,12 @@ test('new prints a shell-quoted continuation for the active host and preserves i
 			const worktree = path.join(dir, '.worktrees', 'continuation')
 			assert.equal(result.status, 0, result.stderr)
 			assert.match(result.stderr, /exit the current host/i)
-			const continuation = result.stderr.trim().split('\n').at(-1)
-			assert.ok(continuation.endsWith(` && ${host}`), result.stderr)
-			const directory = spawnSync('/bin/sh', ['-c', `${continuation.slice(0, -host.length)}pwd`], { encoding: 'utf8' })
+			const continuation = result.stderr.trim().split(/\r?\n/).at(-1)
+			const cd = `cd ${shell_quote(worktree)}`
+			assert.equal(continuation, command_chain(cd, host), result.stderr)
+			const directory = process.platform === 'win32'
+				? spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command_chain(cd, '(Get-Location).Path')], { encoding: 'utf8' })
+				: spawnSync('/bin/sh', ['-c', command_chain(cd, 'pwd')], { encoding: 'utf8' })
 			assert.equal(directory.status, 0, directory.stderr)
 			assert.equal(directory.stdout.trim(), worktree)
 			assert.equal(result.stdout.trim(), worktree)
@@ -1667,8 +1670,9 @@ test('new opens the notebook with AGF_OPEN when set', async () => {
 	const { dir } = make_repo()
 	const marker_dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-marker-')))
 	const marker = path.join(marker_dir, 'opened')
-	const script = path.join(marker_dir, 'opener.sh')
-	fs.writeFileSync(script, `#!/bin/sh\necho "$1" > "${marker}"\n`, { mode: 0o755 })
+	const script = path.join(marker_dir, process.platform === 'win32' ? 'opener.cmd' : 'opener.sh')
+	if (process.platform === 'win32') fs.writeFileSync(script, `@echo %~1> "${marker}"\r\n`)
+	else fs.writeFileSync(script, `#!/bin/sh\necho "$1" > "${marker}"\n`, { mode: 0o755 })
 	process.env.AGF_OPEN = script
 	try {
 		const r = agf.main(['new', 'test-open'], dir, () => {})
@@ -2350,7 +2354,7 @@ test('finish recovery commands quote metacharacter-bearing default refs', () => 
 	assert.equal(agf.main(['finish', '--deliver'], wt, (message) => logs.push(message)), 1)
 	assert.ok(logs.some((line) => line.includes("switch 'main;echo$PWNED")))
 	assert.ok(logs.some((line) => line.includes("merge --ff-only 'origin/main;echo$PWNED")))
-	assert.ok(logs.some((line) => line.includes("'\\''q'")))
+	assert.ok(logs.some((line) => line.includes(process.platform === 'win32' ? "''q'" : "'\\''q'")))
 	drop(dir, bare)
 })
 
@@ -2367,7 +2371,7 @@ test('cleanup recovery commands quote a spaced repository and metacharacter-bear
 	assert.equal(agf.main(['cleanup', 'login-page'], dir, (message) => logs.push(message)), 1)
 	const recovery = logs.find(line => line.includes('get there with:'))
 	assert.ok(recovery)
-	assert.ok(recovery.includes(`cd ${shell_quote(dir)} && git switch ${shell_quote(weird)}`), recovery)
+	assert.ok(recovery.includes(command_chain(`cd ${shell_quote(dir)}`, `git switch ${shell_quote(weird)}`)), recovery)
 	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'), 'nothing was deleted')
 	drop(dir, bare)
 })
@@ -2605,7 +2609,7 @@ test('cleanup preserves the worktree used by the running host and redirects clea
 	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'))
 	assert.equal(run(['rev-parse', 'main']), main_before)
 	assert.ok(logs.some((line) => line.includes('still using')))
-	assert.ok(logs.some((line) => line.includes(`cd ${shell_quote(dir)} && agf cleanup ${shell_quote('login-page')}`)))
+	assert.ok(logs.some((line) => line.includes(command_chain(`cd ${shell_quote(dir)}`, `agf cleanup ${shell_quote('login-page')}`))))
 	drop(dir)
 })
 

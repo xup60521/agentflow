@@ -281,7 +281,8 @@ const devlog_template = ({ taskkey, name, project_line, config_path, feature_roo
 
 // .../<repo>/.worktrees/<key>[/deeper] → <key>; anything else → ''
 const key_from_path = (cwd) => {
-	const parts = String(cwd).split(path.sep)
+	// Git reports Windows paths with forward slashes, so accept either there.
+	const parts = String(cwd).split(process.platform === 'win32' ? /[\\/]/u : path.sep)
 	const at = parts.lastIndexOf('.worktrees')
 	return at >= 0 && parts[at + 1] ? parts[at + 1] : ''
 }
@@ -995,7 +996,14 @@ const same_folder = (left, right) => process.platform === 'win32'
 	? real_path(left).toLowerCase() === real_path(right).toLowerCase()
 	: real_path(left) === real_path(right)
 
-const shell_quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`
+// Printed commands target the owner's shell: POSIX sh, or Windows PowerShell,
+// whose single quotes double an embedded quote and whose 5.1 release has no &&.
+const shell_quote = (value) => process.platform === 'win32'
+	? `'${String(value).replace(/'/g, "''")}'`
+	: `'${String(value).replace(/'/g, "'\\''")}'`
+const command_chain = (...commands) => process.platform === 'win32'
+	? commands.reduceRight((rest, command) => rest === null ? command : `${command}; if ($?) { ${rest} }`, null)
+	: commands.join(' && ')
 
 const local_branches = (repo) => {
 	const result = git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
@@ -1058,10 +1066,10 @@ const merge_and_abort = (context, source, log) => {
 }
 
 const main_recovery = (context) =>
-	`git -C ${shell_quote(context.repo)} switch ${shell_quote(context.def)} && git -C ${shell_quote(context.repo)} fetch origin && git -C ${shell_quote(context.repo)} merge --ff-only ${shell_quote(`origin/${context.def}`)}`
+	command_chain(`git -C ${shell_quote(context.repo)} switch ${shell_quote(context.def)}`, `git -C ${shell_quote(context.repo)} fetch origin`, `git -C ${shell_quote(context.repo)} merge --ff-only ${shell_quote(`origin/${context.def}`)}`)
 
 const local_main_recovery = (context, source = context.key) =>
-	`git -C ${shell_quote(context.repo)} switch ${shell_quote(context.def)} && git -C ${shell_quote(context.repo)} merge --ff-only ${shell_quote(source)}`
+	command_chain(`git -C ${shell_quote(context.repo)} switch ${shell_quote(context.def)}`, `git -C ${shell_quote(context.repo)} merge --ff-only ${shell_quote(source)}`)
 
 const tree_paths = (repo, ref) => {
 	const result = git(repo, ['ls-tree', '-r', '-z', '--name-only', ref], { preserve_nul: true })
@@ -2002,7 +2010,7 @@ const new_main = (argv, cwd, log, ask, width = 80) => {
 	log('')
 	log(`stream: ${taskkey} open`)
 	log(`branch: ${taskkey}`)
-	log(`notebook: ${wt_rel}/${doc_rel}`)
+	log(`notebook: ${`${wt_rel}/${doc_rel}`.split(path.sep).join('/')}`)
 	log('')
 	log('open new notebook in your editor:')
 	log(path.join(wt, doc_rel))
@@ -2010,12 +2018,16 @@ const new_main = (argv, cwd, log, ask, width = 80) => {
 	log('root stream pointer not written — the next `godev` in the main project folder adds it')
 	log('')
 	log('exit the current host, then continue in the stream:')
-	log(`cd ${shell_quote(wt)} && ${active_host}`)
+	log(command_chain(`cd ${shell_quote(wt)}`, active_host))
 
 	const agf_open = process.env.AGF_OPEN
 	if (agf_open) {
 		try {
-			const child = spawn(agf_open, [path.join(wt, doc_rel)], { detached: true, stdio: 'ignore' })
+			// Windows editors are usually .cmd wrappers (code.cmd), which only
+			// cmd.exe can run; `call` resolves them the way the owner's shell does.
+			const child = process.platform === 'win32'
+				? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'call', agf_open, path.join(wt, doc_rel)], { detached: true, stdio: 'ignore', windowsHide: true })
+				: spawn(agf_open, [path.join(wt, doc_rel)], { detached: true, stdio: 'ignore' })
 			child.on('error', () => {})
 			child.unref()
 		} catch (err) {
@@ -2138,7 +2150,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	const on = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])
 	if (!on.ok || on.out !== def) {
 		log(`the main project folder is on branch "${on.out}", not "${def}" — nothing was changed`)
-		log(`get there with:  cd ${shell_quote(repo)} && git switch ${shell_quote(def)}`)
+		log(`get there with:  ${command_chain(`cd ${shell_quote(repo)}`, `git switch ${shell_quote(def)}`)}`)
 		return 1
 	}
 
@@ -2158,7 +2170,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// first; deleting cwd prevents the operating system from starting that hook. — I-058.
 	if (same_folder(top.out, wt)) {
 		log(`${wt_rel} is still using this running host as its current folder — nothing was changed`)
-		log(`exit this session, then clean up from the main project folder with:  cd ${shell_quote(repo)} && agf cleanup ${shell_quote(key)}`)
+		log(`exit this session, then clean up from the main project folder with:  ${command_chain(`cd ${shell_quote(repo)}`, `agf cleanup ${shell_quote(key)}`)}`)
 		return 1
 	}
 
@@ -2663,7 +2675,7 @@ const main = (argv, cwd, log, ask, width = 80) => {
 
 module.exports = {
 	kebab_case, is_key, next_key, parse_new_args, parse_clean_args, parse_finish_args, resolve_key,
-	parse_start_args, parse_close_args, render_usage, devlog_template, key_from_path, default_from_origin_head,
+	parse_start_args, parse_close_args, render_usage, devlog_template, key_from_path, default_from_origin_head, shell_quote, command_chain,
 	is_yes, near_keys, stream_doc, host_from_root_status, active_host_for_cli, sanitize_diagnostic, git_timeout_ms, delivery_lock_path, write_all_sync, update_ignore_file, provision_env_links, init_main, start_main, close_main, new_main, finish_main, clean_main, ditch_main, uninstall_main, setup_main, hooks_main, settings_main, main,
 }
 
