@@ -6,6 +6,7 @@ const node_fs = require('node:fs')
 const node_os = require('node:os')
 const node_path = require('node:path')
 const { contain_nested_processes, find_nested_processes, read_process_table, send_tree_signal } = require('./process-tree.js')
+const { launch_command } = require('./executable-launch.js')
 
 const MAX_OUTPUT_BYTES = 4096
 const DEFAULT_TIMEOUT_MS = 0
@@ -299,9 +300,11 @@ const run_child = ({ command, cwd, timeout_ms, stall_timeout_ms, nested_poll_ms,
   const stderr_capture = make_capture(max_output_bytes)
   let child
   try {
-    child = node_child_process.spawn(command.executable, command.args, {
+    const environment = worker_environment(command, env)
+    const launch = launch_command(command.executable, command.args, { env: environment })
+    child = node_child_process.spawn(launch.file, launch.args, {
       cwd,
-      env: worker_environment(command, env),
+      env: environment,
       shell: false,
       detached: true,
       windowsHide: true,

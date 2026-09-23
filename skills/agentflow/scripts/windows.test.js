@@ -11,6 +11,8 @@ const { execFileSync } = require('node:child_process')
 
 const setup = require('./setup.js')
 const settings = require('./ag-settings.js')
+const launch = require('./executable-launch.js')
+const runner = require('./external-runner.js')
 const { send_tree_signal } = require('./process-tree.js')
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'agentflow-windows-'))
@@ -58,6 +60,52 @@ test('Windows executable discovery requires a native executable extension', { sk
     fs.writeFileSync(path.join(root, 'opencode.cmd'), '@ECHO off\r\n"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe" %*\r\n')
     assert.equal(settings.resolve_executable('opencode', { path_value: root }), path.join(native, 'opencode.exe'))
   } finally { drop(root) }
+})
+
+// npm's Codex wrapper names node.exe first and the real entry point second.
+// Launching the first .exe it mentions would run `node.exe exec ...`, so a
+// script-backed wrapper must launch node with that script ahead of the args.
+const write_node_shim = (root, name, script) => {
+  fs.copyFileSync(process.execPath, path.join(root, 'node.exe'))
+  const entry = path.join(root, 'node_modules', name, 'bin', `${name}.js`)
+  fs.mkdirSync(path.dirname(entry), { recursive: true })
+  fs.writeFileSync(entry, script)
+  fs.writeFileSync(path.join(root, `${name}.cmd`), `@ECHO off\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\${name}\\bin\\${name}.js" %*\r\n`)
+  return entry
+}
+
+test('Windows launch runs a node-script wrapper through node with its entry point first', { skip: process.platform !== 'win32' }, () => {
+  const root = tmp()
+  try {
+    const entry = write_node_shim(root, 'codex', '')
+    assert.deepEqual(launch.resolve_launch('codex', { path_value: root }), { file: path.join(root, 'node.exe'), prefix: [entry] })
+    assert.deepEqual(launch.launch_command('codex', ['exec', '-'], { path_value: root }), { file: path.join(root, 'node.exe'), args: [entry, 'exec', '-'] })
+    assert.equal(settings.executable_available('codex', { path_value: root }), true)
+    assert.deepEqual(launch.launch_command('C:\\tools\\codex.exe', ['exec'], { path_value: root }), { file: 'C:\\tools\\codex.exe', args: ['exec'] })
+  } finally { drop(root) }
+})
+
+test('worker selection keeps the profile command name that recipe checks depend on', () => {
+  const config = settings.make_template('codex')
+  const selection = settings.resolve_worker_tier(config, { role: 'acceptance' }, { active_host: 'codex', executables: ['codex', 'claude'] })
+  assert.equal(selection.executable, 'codex')
+})
+
+test('the external runner launches a node-script wrapper on Windows', { skip: process.platform !== 'win32', timeout: 30000 }, async () => {
+  const root = tmp()
+  const source = tmp()
+  const clones = tmp()
+  const saved = process.env.PATH
+  try {
+    write_node_shim(root, 'fakecli', "process.stdout.write('ARGS:' + JSON.stringify(process.argv.slice(2)))")
+    for (const args of [['init', '-q'], ['config', 'user.email', 'runner@example.test'], ['config', 'user.name', 'Runner'], ['commit', '-q', '--allow-empty', '-m', 'initial']]) execFileSync('git', ['-C', source, ...args])
+    process.env.PATH = `${root}${path.delimiter}${saved}`
+    const result = await runner.run_external_command({ source_directory: source, clone_directory: path.join(clones, 'clone'), command: ['fakecli', 'exec', 'ok'], timeout_ms: 20000 })
+    assert.equal(result.process.error, null)
+    assert.equal(result.status, 'completed')
+    assert.equal(result.command.executable, 'fakecli')
+    assert.match(result.stdout, /ARGS:\["exec","ok"\]/u)
+  } finally { process.env.PATH = saved; drop(root); drop(source); drop(clones) }
 })
 
 test('Windows cancellation terminates descendants', { skip: process.platform !== 'win32', timeout: 15000 }, async () => {

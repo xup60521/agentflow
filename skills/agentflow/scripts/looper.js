@@ -9,6 +9,7 @@ const { spawn: node_spawn, spawnSync: node_spawn_sync } = require('node:child_pr
 const { StringDecoder } = require('node:string_decoder')
 const { contain_nested_processes, find_nested_processes, read_process_table } = require('./process-tree')
 const { format_local_timestamp } = require('./local-time')
+const { launch_command } = require('./executable-launch')
 const agentflow_settings = require('./ag-settings')
 const queue_contract = require('./queue-contract')
 const delegation_route = require('./delegation-route')
@@ -26,6 +27,11 @@ const STOP_NAME = '.stop.txt'
 const RECOVERY_NAME_ATTEMPTS = 8
 const MILESTONE_INTERVAL_MS = 60 * 1000
 const MAX_MILESTONE_DETAIL_CHARS = 240
+
+const spawn_worker = (executable, args, options) => {
+  const launch = launch_command(executable, args, { env: options.env })
+  return node_spawn(launch.file, launch.args, options)
+}
 
 const workspace_defaults = root => {
   try {
@@ -719,7 +725,7 @@ const make_context = (options) => {
     completion_line,
     executable: options.executable || null,
     command_args: [],
-    spawn: options.spawn || node_spawn,
+    spawn: options.spawn || spawn_worker,
     launched: [],
     current_attempt: null,
     current_plan: null,
@@ -873,7 +879,7 @@ const configure_child = (context) => {
     throw looper_error(`No permitted external executor is available. Resume this pending queue in an interactive host: ${context.tasks_dir}. ${selection.requirement || ''}`, { handoff: true })
   }
   const profile = profiles.find(candidate => candidate.candidate_id === selection.candidate_id)
-  context.executable = agentflow_settings.resolve_executable(profile.command[0]) || profile.command[0]
+  context.executable = profile.command[0]
   context.command_args = profile.command.slice(1)
   context.worker_family = agentflow_settings.profile_family(profile) || null
   context.worker_model = selection.usable_model === 'inherited' ? null : selection.usable_model

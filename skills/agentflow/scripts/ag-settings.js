@@ -10,6 +10,7 @@ const node_fs = require('node:fs')
 const node_path = require('node:path')
 const node_child_process = require('node:child_process')
 const { format_local_timestamp } = require('./local-time.js')
+const { resolve_launch } = require('./executable-launch.js')
 
 const schema_version = 8
 const git_timeout_default_ms = 30_000
@@ -434,27 +435,8 @@ const parse_model_value = value => {
 const resolve_executable = (command, options = {}) => {
 	if (typeof command !== 'string' || command.length === 0) return null
 	if (options.executables !== undefined) return executable_available(command, options) ? command : null
-	const path_value = options.path_value === undefined ? process.env.PATH : options.path_value
-	if (typeof path_value !== 'string') return null
-	for (const directory of path_value.split(node_path.delimiter)) {
-		if (!directory) continue
-		const clean = process.platform === 'win32' ? directory.replace(/^"|"$/g, '') : directory
-		const direct = process.platform === 'win32' ? [`${command}.exe`, `${command}.com`] : [command]
-		for (const name of direct) {
-			const candidate = node_path.join(clean, name)
-			try { if (node_fs.statSync(candidate).isFile() && (process.platform === 'win32' || (node_fs.statSync(candidate).mode & 0o111) !== 0)) return candidate } catch {}
-		}
-		if (process.platform !== 'win32') continue
-		const wrapper = node_path.join(clean, `${command}.cmd`)
-		try {
-			const text = node_fs.readFileSync(wrapper, 'utf8')
-			const match = /["']?%dp0%[\\/]([^"'\r\n]+\.exe)["']?/iu.exec(text)
-			if (!match) continue
-			const candidate = node_path.resolve(clean, match[1])
-			if (node_fs.statSync(candidate).isFile()) return candidate
-		} catch {}
-	}
-	return null
+	const launch = resolve_launch(command, options)
+	return launch === null ? null : launch.file
 }
 
 const executable_available = (command, options = {}) => {
@@ -1758,7 +1740,7 @@ const resolve_profile_tier = (profile, tier) => {
 	if (tier_name_error(tier) || !parsed || !Array.isArray(profile.command)) throw new SettingsError('selected external-worker profile has an invalid tier or command', { code: 'AG_DISPATCH_INVALID' })
 	return {
 		profile,
-		executable: resolve_executable(profile.command[0]) || profile.command[0],
+		executable: profile.command[0],
 		args: profile.command.slice(1),
 		model: parsed.model,
 		effort: parsed.effort,
