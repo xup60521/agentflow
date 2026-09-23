@@ -694,11 +694,13 @@ test('near_keys offers the likely typos, not the whole list', () => {
 
 // ---------- end to end, in a throwaway repo ----------
 
-const make_repo = ({ remote = false, prefix = 'agf-' } = {}) => {
+const make_repo = ({ remote = false, prefix = 'agf-', exact_bytes = false } = {}) => {
 	// realpath: on macOS /var is a symlink to /private/var, and git reports the real path
 	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
 	const run = (args, cwd = dir) => execFileSync('git', args, { cwd, encoding: 'utf8' })
 	run(['init', '-b', 'main'])
+	// Tests about exact file bytes must not inherit a global core.autocrlf=true (common on Windows).
+	if (exact_bytes) run(['config', 'core.autocrlf', 'false'])
 	run(['config', 'user.email', 't@example.com'])
 	run(['config', 'user.name', 'T'])
 	fs.writeFileSync(path.join(dir, '.gitignore'), '.worktrees/\n')
@@ -1318,13 +1320,49 @@ const drop = (...dirs) => dirs.filter(Boolean).forEach((d) => fs.rmSync(d, { rec
 
 const shell_quote = value => `'${String(value).replace(/'/g, "'\\''")}'`
 
+// Windows resolves a bare "git" only to git.com/git.exe, so the Node wrapper
+// needs a native launcher that passes its raw command line through unchanged.
+let win32_git_launcher = null
+const win32_launcher = () => {
+	if (win32_git_launcher) return win32_git_launcher
+	const csc = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+	if (!fs.existsSync(csc)) throw new Error('could not find csc.exe to build the local test git launcher')
+	const build = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-git-launcher-')))
+	const source = path.join(build, 'launcher.cs')
+	fs.writeFileSync(source, `using System;
+using System.Diagnostics;
+using System.IO;
+class Launcher {
+	static int Main() {
+		string line = Environment.CommandLine;
+		int i = 0;
+		if (line.StartsWith("\\"")) { i = line.IndexOf('"', 1); i = i < 0 ? line.Length : i + 1; }
+		else while (i < line.Length && line[i] != ' ' && line[i] != '\\t') i++;
+		string rest = line.Substring(i).TrimStart(' ', '\\t');
+		string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "git.js");
+		ProcessStartInfo info = new ProcessStartInfo(@"${process.execPath.replace(/"/g, '""')}", "\\"" + script + "\\" " + rest);
+		info.UseShellExecute = false;
+		Process child = Process.Start(info);
+		child.WaitForExit();
+		return child.ExitCode;
+	}
+}
+`)
+	execFileSync(csc, ['/nologo', '/target:exe', `/out:${path.join(build, 'git.exe')}`, source], { stdio: 'pipe' })
+	win32_git_launcher = path.join(build, 'git.exe')
+	process.on('exit', () => fs.rmSync(build, { recursive: true, force: true }))
+	return win32_git_launcher
+}
+
 const make_git_wrapper = (mode) => {
 	const bin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-git-wrapper-')))
+	const git_name = process.platform === 'win32' ? 'git.exe' : 'git'
 	const real_git = process.env.PATH.split(path.delimiter)
-		.map(directory => path.join(directory, 'git'))
+		.map(directory => path.join(directory, git_name))
 		.find(candidate => fs.existsSync(candidate))
 	if (!real_git) throw new Error('could not find the real git executable for the local test wrapper')
-	const wrapper = path.join(bin, 'git')
+	if (process.platform === 'win32') fs.copyFileSync(win32_launcher(), path.join(bin, 'git.exe'))
+	const wrapper = path.join(bin, process.platform === 'win32' ? 'git.js' : 'git')
 	fs.writeFileSync(wrapper, `#!/usr/bin/env node
 const child_process = require('node:child_process')
 const fs = require('node:fs')
@@ -1359,7 +1397,7 @@ const lock_path = process.env.AGF_TEST_LOCK_PATH || ''
 const commit_then_fail = ${JSON.stringify(mode === 'commit-then-fail')}
 const is_diff = args[0] === 'diff' && args.includes('--diff-filter=A')
 const is_merge = args[0] === 'merge' && args[1] === '--ff-only'
-const is_stream_head = args[0] === 'rev-parse' && args[1] === 'HEAD' && process.cwd().includes('/.worktrees/')
+const is_stream_head = args[0] === 'rev-parse' && args[1] === 'HEAD' && /[\\\\/]\\.worktrees[\\\\/]/.test(process.cwd())
 if (result.status === 0 && ((switch_after === 'diff' && is_diff) || (switch_after === 'merge' && is_merge))) {
   const switched = child_process.spawnSync(real_git, ['switch', 'side'], { cwd: process.cwd(), encoding: 'utf8' })
   process.stderr.write(switched.stderr || '')
@@ -1947,7 +1985,7 @@ test('finish local delivery refuses a stream tip movement before the default-ref
 })
 
 test('finish preparation aborts remote and local conflicts without moving the default branch', () => {
-	const remote_case = make_repo({ remote: true })
+	const remote_case = make_repo({ remote: true, exact_bytes: true })
 	const remote_wt = open_stream(remote_case.dir, 'login page')
 	commit_stream_file(remote_case.run, remote_wt, 'shared.txt', 'stream\n')
 	commit_stream_file(remote_case.run, remote_case.dir, 'shared.txt', 'main\n', 'main conflict')
@@ -1964,7 +2002,7 @@ test('finish preparation aborts remote and local conflicts without moving the de
 	assert.equal(fs.readFileSync(path.join(remote_wt, 'shared.txt'), 'utf8'), 'stream\n')
 	drop(remote_case.dir)
 
-	const local_case = make_repo()
+	const local_case = make_repo({ exact_bytes: true })
 	const local_wt = open_stream(local_case.dir, 'login page')
 	commit_stream_file(local_case.run, local_wt, 'shared.txt', 'stream\n')
 	commit_stream_file(local_case.run, local_case.dir, 'shared.txt', 'main\n', 'main conflict')
@@ -2059,13 +2097,16 @@ test('finish delivery validates original committed notebook bytes and rejects no
 	]
 
 	for (const [label, make_bytes] of variants) {
-		const { dir, run } = make_repo()
+		const { dir, run } = make_repo({ exact_bytes: true })
 		const wt = open_stream(dir, 'login page')
 		const doc = path.join(wt, '.agentflow/features', key, `${key}.devlog.md`)
 		const opened = fs.readFileSync(doc, 'utf8')
 		const valid = opened.replace(new RegExp(`^Feature: ${key} — active —.*$`, 'm'), marker)
 		assert.notEqual(valid, opened)
-		commit_notebook_bytes(run, wt, key, make_bytes(valid), `reject ${label}`)
+		const bytes = make_bytes(valid)
+		assert.ok(!bytes.equals(Buffer.from(valid)), `${label} must change the valid bytes`)
+		commit_notebook_bytes(run, wt, key, bytes, `reject ${label}`)
+		assert.ok(execFileSync('git', ['show', `HEAD:.agentflow/features/${key}/${key}.devlog.md`], { cwd: wt }).equals(bytes), `${label} is committed byte for byte`)
 		const main_before = run(['rev-parse', 'main'])
 		const logs = []
 
@@ -2522,6 +2563,39 @@ test('cleanup preserves the worktree used by the running host and redirects clea
 	assert.equal(run(['rev-parse', 'main']), main_before)
 	assert.ok(logs.some((line) => line.includes('still using')))
 	assert.ok(logs.some((line) => line.includes(`cd ${shell_quote(dir)} && agf cleanup ${shell_quote('login-page')}`)))
+	drop(dir)
+})
+
+// Git reports the resolved toplevel while the stream folder is spelled through
+// the linked .worktrees; the guard must still see the same folder.
+for (const command of ['cleanup', 'ditch']) test(`${command} refuses the running host's worktree reached through a linked .worktrees folder`, () => {
+	const { dir, run } = make_repo()
+	const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-linked-')))
+	fs.symlinkSync(elsewhere, path.join(dir, '.worktrees'), process.platform === 'win32' ? 'junction' : 'dir')
+	const wt = open_stream(dir, 'login page')
+	const main_before = run(['rev-parse', 'main'])
+	const logs = []
+
+	assert.equal(agf.main([command, 'login-page'], wt, (message) => logs.push(message), () => 'Y\n'), 1)
+	assert.ok(fs.existsSync(path.join(elsewhere, 'login-page', '.git')), 'the worktree folder is kept')
+	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'), 'the branch is kept')
+	assert.equal(run(['rev-parse', 'main']), main_before)
+	assert.ok(logs.some((line) => command === 'cleanup' ? line.includes('still using') : line.includes('exit this stream session')), logs.join('\n'))
+	fs.unlinkSync(path.join(dir, '.worktrees'))
+	drop(dir, elsewhere)
+})
+
+// win32 folders are case-insensitive; a differently cased spelling is the same folder.
+if (process.platform === 'win32') for (const command of ['cleanup', 'ditch']) test(`${command} refuses the running host's worktree spelled with a different case`, () => {
+	const { dir, run } = make_repo()
+	const wt = open_stream(dir, 'login page')
+	const logs = []
+	const swap = (value) => value.replace(/[a-z]/gi, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase())
+
+	assert.equal(agf.main([command, 'login-page'], swap(wt), (message) => logs.push(message), () => 'Y\n'), 1)
+	assert.ok(fs.existsSync(path.join(wt, '.git')), 'the worktree folder is kept')
+	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'), 'the branch is kept')
+	assert.ok(logs.some((line) => command === 'cleanup' ? line.includes('still using') : line.includes('exit this stream session')), logs.join('\n'))
 	drop(dir)
 })
 

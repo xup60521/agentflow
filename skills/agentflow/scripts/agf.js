@@ -2112,7 +2112,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// --git-common-dir is the MAIN checkout's .git, from a worktree as well as from the main folder.
 	const common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
 	if (!common.ok) { log(`cannot locate the main checkout:\n${common.out}`); return 1 }
-	const repo = path.dirname(common.out)
+	const repo = path.dirname(real_path(common.out))
 
 	const key = args.key || key_from_path(cwd)
 	if (!key) { log('no feature name given, and you are not standing in a .worktrees/<name> folder\n\n' + render_usage(width)); return 1 }
@@ -2146,7 +2146,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// Guard 3 — never remove the folder still used by the running host. A shell
 	// function can cd after this child exits, but an AI host runs its Stop hook
 	// first; deleting cwd prevents the operating system from starting that hook. — I-058.
-	if (path.resolve(top.out) === path.resolve(wt)) {
+	if (real_path(top.out) === real_path(wt)) {
 		log(`${wt_rel} is still using this running host as its current folder — nothing was changed`)
 		log(`exit this session, then clean up from the main project folder with:  cd ${shell_quote(repo)} && agf cleanup ${shell_quote(key)}`)
 		return 1
@@ -2379,7 +2379,7 @@ const ditch_main = (argv, cwd, log, ask = ask_tty, width = 80) => {
 	if (!top.ok) { log('not a git repository — run agf inside your project'); return 1 }
 	const common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
 	if (!common.ok) { log(`cannot locate the main checkout:\n${common.out}`); return 1 }
-	const repo = path.dirname(common.out)
+	const repo = path.dirname(real_path(common.out))
 
 	// Never inferred from the folder — for a delete, you type exactly what goes.
 	const key = args.key
