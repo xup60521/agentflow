@@ -29,6 +29,8 @@ const PTY_SCRIPT = [
 	'exit [lindex $waited 3]',
 ].join('\n');
 
+const pty = { skip: process.platform === 'win32' ? 'requires /usr/bin/expect and a POSIX terminal' : false };
+
 const run = (cwd, command, input, env) => {
 	const result = child_process.spawnSync('/usr/bin/expect', ['-c', PTY_SCRIPT], {
 		cwd,
@@ -65,7 +67,7 @@ const transcript_json = transcript => {
 
 const git = (cwd, args) => child_process.execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'non-behavioral', 'natural-waiver', 'non-git', 'non-git-normal', 'archive-retry']) test(`${mode} real start and one-command close journey proves visible input, JSON output, and scoped local delivery`, () => {
+for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'non-behavioral', 'natural-waiver', 'non-git', 'non-git-normal', 'archive-retry']) test(`${mode} real start and one-command close journey proves visible input, JSON output, and scoped local delivery`, pty, () => {
 	const non_git = mode.startsWith('non-git');
 	const fast_lane = ['inline', 'resume', 'comma-resume', 'non-git'].includes(mode);
 	const resuming = mode === 'resume' || mode === 'comma-resume';
@@ -222,7 +224,7 @@ for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'n
 	}
 });
 
-test('real PTY startup detects the computer language and preserves the saved choice', () => {
+test('real PTY startup detects the computer language and preserves the saved choice', pty, () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-locale-journey-')));
 	const expected = detect_initial_language();
 	const first = run(root, [AGF, 'start', '--host', 'codex'], 'locale journey\n');
@@ -242,7 +244,7 @@ test('real PTY startup detects the computer language and preserves the saved cho
 	assert.equal(fs.readFileSync(config_path, 'utf8'), saved);
 });
 
-test('active-host real PTY startup adds the other host only when it runs', () => {
+test('active-host real PTY startup adds the other host only when it runs', pty, () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-host-journey-')));
 	let prior_host;
 	for (const host of ['codex', 'codex', 'claude', 'claude']) {

@@ -19,7 +19,7 @@ test('skills audit inventories project, user and plugins without executing skill
   const plugin = path.join(home, '.claude/plugins/cache/vendor/pkg/1/skills/extra')
   fs.mkdirSync(plugin, { recursive: true }); fs.writeFileSync(path.join(plugin, 'SKILL.md'), 'Extra skill')
   fs.writeFileSync(path.join(home, '.codex/config.toml'), 'secret = "DO_NOT_PRINT"')
-  const run = (...args) => spawnSync(process.execPath, [cli, 'skills', ...args], { cwd: repo, env: { ...process.env, HOME: home, CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: path.join(home, '.claude') }, encoding: 'utf8' })
+  const run = (...args) => spawnSync(process.execPath, [cli, 'skills', ...args], { cwd: repo, env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: path.join(home, '.claude') }, encoding: 'utf8' })
   const result = run('audit', '--json')
   assert.equal(result.status, 0, result.stderr)
   const report = JSON.parse(result.stdout)
