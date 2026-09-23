@@ -202,7 +202,7 @@ const read_attempt_bytes = (file_system, file, path_stat) => {
   const valid_stat_number = (value) => Number.isSafeInteger(value) && value >= 0
   const regular_stat = (stat) => stat && typeof stat.isFile === 'function' && stat.isFile() &&
     typeof stat.isSymbolicLink === 'function' && !stat.isSymbolicLink() &&
-    valid_stat_number(stat.dev) && valid_stat_number(stat.ino) && valid_stat_number(stat.size)
+    valid_identity_number(stat.dev) && valid_identity_number(stat.ino) && valid_stat_number(stat.size)
 
   try {
     descriptor = file_system.openSync(file, descriptor_flags())
@@ -1131,7 +1131,9 @@ const release_lock = (context) => {
   notify(context, 'ownership-released', { lock_dir: context.lock_dir, retired_path })
 }
 
-const valid_identity_number = (value) => Number.isSafeInteger(value) && value >= 0
+// NTFS file IDs are 64-bit and often exceed 2^53, so Node reports dev and ino
+// as rounded integers; they still compare consistently for the same file.
+const valid_identity_number = (value) => Number.isInteger(value) && value >= 0
 
 const valid_sha256 = (value) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 

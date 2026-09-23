@@ -324,6 +324,10 @@ const remove_temp_dir = (dir) => {
   fs.rmSync(dir, { recursive: true, force: true })
 }
 
+// NTFS inode numbers above 2^53 are spaced more than 1 apart as doubles, so
+// `ino + 1` can round back to the same value.
+const other_inode = ino => ino + Math.max(1, 2 ** (Math.floor(Math.log2(ino || 1)) - 51))
+
 const make_fake_child = (dir) => {
   const file = path.join(dir, 'fake-child.js')
   fs.writeFileSync(file, fake_child_source)
@@ -1760,7 +1764,7 @@ test('attempt record descriptor identity mismatch closes the descriptor and stop
           if (fd !== attempt_fd) return stat
           return new Proxy(stat, {
             get(stat_target, stat_property, receiver) {
-              if (stat_property === 'ino') return stat_target.ino + 1
+              if (stat_property === 'ino') return other_inode(stat_target.ino)
               return Reflect.get(stat_target, stat_property, receiver)
             },
           })
@@ -1942,7 +1946,7 @@ test('every missing or malformed completed fact blocks recovery before ownership
     ['rechecked dev missing', (record) => { delete record.rechecked_dev }],
     ['rechecked dev malformed', (record) => { record.rechecked_dev += 1 }],
     ['rechecked inode missing', (record) => { delete record.rechecked_ino }],
-    ['rechecked inode malformed', (record) => { record.rechecked_ino += 1 }],
+    ['rechecked inode malformed', (record) => { record.rechecked_ino = other_inode(record.rechecked_ino) }],
     ['rechecked size missing', (record) => { delete record.rechecked_size }],
     ['rechecked size malformed', (record) => { record.rechecked_size += 1 }],
     ['archived flag missing', (record) => { delete record.archived }],
@@ -1957,7 +1961,7 @@ test('every missing or malformed completed fact blocks recovery before ownership
     ['archive dev missing', (record) => { delete record.archived_dev }],
     ['archive dev malformed', (record) => { record.archived_dev += 1 }],
     ['archive inode missing', (record) => { delete record.archived_ino }],
-    ['archive inode malformed', (record) => { record.archived_ino += 1 }],
+    ['archive inode malformed', (record) => { record.archived_ino = other_inode(record.archived_ino) }],
     ['archive size missing', (record) => { delete record.archived_size }],
     ['archive size malformed', (record) => { record.archived_size += 1 }],
   ]
@@ -2017,7 +2021,7 @@ test('completed records reject noncanonical paths and every unsafe archive objec
       fs.writeFileSync(record.archived_path, 'corrupted archive\n')
     }],
     ['archive identity is inconsistent', ({ record }) => {
-      record.archived_ino += 1
+      record.archived_ino = other_inode(record.archived_ino)
     }],
   ]
 
