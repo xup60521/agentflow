@@ -1318,13 +1318,49 @@ const drop = (...dirs) => dirs.filter(Boolean).forEach((d) => fs.rmSync(d, { rec
 
 const shell_quote = value => `'${String(value).replace(/'/g, "'\\''")}'`
 
+// Windows resolves a bare "git" only to git.com/git.exe, so the Node wrapper
+// needs a native launcher that passes its raw command line through unchanged.
+let win32_git_launcher = null
+const win32_launcher = () => {
+	if (win32_git_launcher) return win32_git_launcher
+	const csc = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe')
+	if (!fs.existsSync(csc)) throw new Error('could not find csc.exe to build the local test git launcher')
+	const build = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-git-launcher-')))
+	const source = path.join(build, 'launcher.cs')
+	fs.writeFileSync(source, `using System;
+using System.Diagnostics;
+using System.IO;
+class Launcher {
+	static int Main() {
+		string line = Environment.CommandLine;
+		int i = 0;
+		if (line.StartsWith("\\"")) { i = line.IndexOf('"', 1); i = i < 0 ? line.Length : i + 1; }
+		else while (i < line.Length && line[i] != ' ' && line[i] != '\\t') i++;
+		string rest = line.Substring(i).TrimStart(' ', '\\t');
+		string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "git.js");
+		ProcessStartInfo info = new ProcessStartInfo(@"${process.execPath.replace(/"/g, '""')}", "\\"" + script + "\\" " + rest);
+		info.UseShellExecute = false;
+		Process child = Process.Start(info);
+		child.WaitForExit();
+		return child.ExitCode;
+	}
+}
+`)
+	execFileSync(csc, ['/nologo', '/target:exe', `/out:${path.join(build, 'git.exe')}`, source], { stdio: 'pipe' })
+	win32_git_launcher = path.join(build, 'git.exe')
+	process.on('exit', () => fs.rmSync(build, { recursive: true, force: true }))
+	return win32_git_launcher
+}
+
 const make_git_wrapper = (mode) => {
 	const bin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-git-wrapper-')))
+	const git_name = process.platform === 'win32' ? 'git.exe' : 'git'
 	const real_git = process.env.PATH.split(path.delimiter)
-		.map(directory => path.join(directory, 'git'))
+		.map(directory => path.join(directory, git_name))
 		.find(candidate => fs.existsSync(candidate))
 	if (!real_git) throw new Error('could not find the real git executable for the local test wrapper')
-	const wrapper = path.join(bin, 'git')
+	if (process.platform === 'win32') fs.copyFileSync(win32_launcher(), path.join(bin, 'git.exe'))
+	const wrapper = path.join(bin, process.platform === 'win32' ? 'git.js' : 'git')
 	fs.writeFileSync(wrapper, `#!/usr/bin/env node
 const child_process = require('node:child_process')
 const fs = require('node:fs')
@@ -1359,7 +1395,7 @@ const lock_path = process.env.AGF_TEST_LOCK_PATH || ''
 const commit_then_fail = ${JSON.stringify(mode === 'commit-then-fail')}
 const is_diff = args[0] === 'diff' && args.includes('--diff-filter=A')
 const is_merge = args[0] === 'merge' && args[1] === '--ff-only'
-const is_stream_head = args[0] === 'rev-parse' && args[1] === 'HEAD' && process.cwd().includes('/.worktrees/')
+const is_stream_head = args[0] === 'rev-parse' && args[1] === 'HEAD' && /[\\\\/]\\.worktrees[\\\\/]/.test(process.cwd())
 if (result.status === 0 && ((switch_after === 'diff' && is_diff) || (switch_after === 'merge' && is_merge))) {
   const switched = child_process.spawnSync(real_git, ['switch', 'side'], { cwd: process.cwd(), encoding: 'utf8' })
   process.stderr.write(switched.stderr || '')
