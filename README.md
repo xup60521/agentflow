@@ -12,6 +12,10 @@ Agentflow has verified integrations for **Codex and Claude Code** and a portable
 
 - **Get help quickly:** Ask your agent, “How do I use the Agentflow skill for this task?” It can explain the controls using your actual project.
 
+## About this fork
+
+`xup60521/agentflow` follows upstream [agfnow/agentflow](https://github.com/agfnow/agentflow) and adds fixes so Agentflow runs on native Windows and on Linux as well as macOS: PowerShell `agf` shortcuts and startup, native `.exe` and npm `.cmd` worker launching, process-tree cancellation, a queue runner that works with Windows ACLs, Recycle Bin and freedesktop trash for completion cleanup, local `.env` files in feature worktrees, and OpenCode support. To install the fork, use `xup60521/agentflow` wherever the commands below say `agfnow/agentflow`. On Windows, read [`references/windows.md`](skills/agentflow/references/windows.md).
+
 ## Install
 
 You need Node.js 18 or newer and a host with file and command tools. Codex and Claude provide verified hooks; a generic host uses an explicit safe ID, optional known family, and manual capture/closeout because hooks are not available. Git is needed for version history, feature workspaces, and some installation methods. Ordinary notebook work can use a folder that is not a Git repository.

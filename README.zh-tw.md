@@ -12,6 +12,10 @@ Agentflow 已驗證 **Codex 和 Claude Code** 的整合，也提供 通用核心
 
 - **最快的入門方式：** 直接問你的 agent：「這件事要怎麼用 Agentflow skill 來做？」它可以配合你的專案說明用法。
 
+## 關於這個 fork
+
+`xup60521/agentflow` 跟隨上游 [agfnow/agentflow](https://github.com/agfnow/agentflow)，並加上修正，讓 Agentflow 除了 macOS 之外也能在原生 Windows 和 Linux 上使用：PowerShell 的 `agf` 捷徑與啟動方式、原生 `.exe` 與 npm `.cmd` worker 啟動、整個行程樹的取消、可在 Windows ACL 下運作的佇列執行器、完成紀錄清理改用資源回收筒或 freedesktop 垃圾桶、功能工作區的本機 `.env` 檔，以及 OpenCode 支援。要安裝這個 fork，請把下方指令中的 `agfnow/agentflow` 換成 `xup60521/agentflow`。Windows 使用者請閱讀 [`references/windows.md`](skills/agentflow/references/windows.md)。
+
 ## 安裝
 
 需要 Node.js 18 或更新版本，以及能讀寫檔案、執行指令的 host。Codex 和 Claude 提供已驗證的 hooks；其他助理 要使用明確安全 ID、選填的已知 family，並手動記錄訊息和收尾，因為它沒有這些 hooks。要保留版本紀錄、建立功能工作區，或使用某些安裝方式時，需要 Git。一般筆記工作可以在還不是 Git 儲存庫的資料夾裡進行。
