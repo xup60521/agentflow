@@ -78,7 +78,7 @@ test('a watermark updated before lock acquisition suppresses a duplicate sweep',
   try {
     fs.openSync = (file, ...args) => {
       const fd = original(file, ...args)
-      if (String(file).endsWith('/completion-cleanup.lock')) fs.writeFileSync(state, JSON.stringify({ version: 1, notebooks: { [f.options.notebook_path]: now } }))
+      if (/[\\/]completion-cleanup\.lock$/u.test(String(file))) fs.writeFileSync(state, JSON.stringify({ version: 1, notebooks: { [f.options.notebook_path]: now } }))
       return fd
     }
     const result = sweep_completion_records({ ...f.options, trash: () => { throw Error('duplicate sweep') } })
@@ -95,7 +95,11 @@ test('ordinary Stop schedules cleanup, while prompt capture and corrective Stop 
     fs.writeFileSync(file, status + '\n---\n\n' + fs.readFileSync(file, 'utf8'))
     const bin = path.join(f.options.project_root, 'bin')
     fs.mkdirSync(bin)
-    fs.writeFileSync(path.join(bin, 'trash'), '#!' + process.execPath + '\nrequire("node:fs").renameSync(process.argv[2], process.argv[2]+".trashed")\n', { mode: 0o700 })
+    const fake_trash = 'require("node:fs").renameSync(process.argv[2], process.argv[2]+".trashed")\n'
+    if (process.platform === 'win32') {
+      fs.writeFileSync(path.join(bin, 'trash.js'), fake_trash)
+      fs.writeFileSync(path.join(bin, 'trash.cmd'), '@"node" "%~dp0\\trash.js" %*\r\n')
+    } else fs.writeFileSync(path.join(bin, 'trash'), '#!' + process.execPath + '\n' + fake_trash, { mode: 0o700 })
     const result = cp.spawnSync(process.execPath, [path.join(__dirname, 'stop-hook.js'), '--host', 'codex'], {
       input: JSON.stringify({ cwd: f.options.project_root, hook_event_name: event === 'corrective' ? 'Stop' : event, stop_hook_active: event === 'corrective', prompt: 'continue fixture' }), encoding: 'utf8',
       env: { ...process.env, AGENTFLOW_EXTERNAL_DELEGATE: '', CLAUDE_PROJECT_DIR: '', PATH: bin + path.delimiter + process.env.PATH }

@@ -6,7 +6,7 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 const vm = require('node:vm')
-const { execFileSync } = require('node:child_process')
+const { move_to_trash } = require('./completion-cleanup')
 
 const { inspect_notebook_rounds, verify_gate } = require('./looper-live-gate')
 
@@ -14,7 +14,7 @@ const notebook = rounds => `${Array.from({ length: rounds }, (_, index) => `# â†
 
 test('kept live-gate state stays below home tmp even when setup fails', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'live-gate-location-'))
-  t.after(() => execFileSync('trash', [root]))
+  t.after(() => move_to_trash(root))
   const fakeHome = path.join(root, 'home'), fakeTemp = path.join(root, 'system-temp')
   fs.mkdirSync(fakeHome)
   fs.mkdirSync(fakeTemp)

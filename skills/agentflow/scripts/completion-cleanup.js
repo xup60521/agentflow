@@ -8,6 +8,29 @@ const node_child_process = require('node:child_process')
 const ag_settings = require('./ag-settings.js')
 const round_linter = require('./round-linter.js')
 const { parse_numeric_timestamp } = require('./local-time.js')
+const { launch_command, resolve_launch } = require('./executable-launch.js')
+
+// Windows has no trash command. An installed one (such as trash-cli) still
+// wins; otherwise the item goes to the Recycle Bin through .NET, with its path
+// passed in the environment so no shell ever parses it.
+const RECYCLE_BIN_SCRIPT = [
+	'Add-Type -AssemblyName Microsoft.VisualBasic',
+	'$item = $env:AGF_TRASH_PATH',
+	"if (Test-Path -LiteralPath $item -PathType Container) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($item, 'OnlyErrorDialogs', 'SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($item, 'OnlyErrorDialogs', 'SendToRecycleBin') }",
+].join('; ')
+
+const move_to_trash = (file, options = {}) => {
+	if (process.platform !== 'win32') return void node_child_process.execFileSync('trash', [file], options)
+	if (resolve_launch('trash') !== null) {
+		const launch = launch_command('trash', [file])
+		return void node_child_process.execFileSync(launch.file, launch.args, { ...options, windowsHide: true })
+	}
+	node_child_process.execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', RECYCLE_BIN_SCRIPT], {
+		...options,
+		env: { ...process.env, AGF_TRASH_PATH: file },
+		windowsHide: true,
+	})
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RETENTION_MS = 30 * DAY_MS
@@ -360,7 +383,7 @@ const sweep_completion_records = (options = {}) => {
 			} catch (error) { return failure('error', `${candidate.record_file}: ${error.message}`) }
 			try {
 				if (typeof options.trash === 'function') options.trash(candidate.record_file)
-				else node_child_process.execFileSync('trash', [candidate.record_file])
+				else move_to_trash(candidate.record_file)
 				moved.push(candidate.record_file)
 			} catch (error) { return { status: 'error', moved, reason: `could not move ${candidate.record_file}: ${error.message}` } }
 		}
@@ -390,4 +413,4 @@ const sweep_completion_records = (options = {}) => {
 	}
 }
 
-module.exports = { sweep_completion_records }
+module.exports = { move_to_trash, sweep_completion_records }
