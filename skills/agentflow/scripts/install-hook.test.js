@@ -205,7 +205,8 @@ test('project install writes the pre-commit guard in a git repo, idempotently', 
 
   assert.match(written, /agentflow devlog-guard/);
   assert.match(written, /devlog-guard\.js/);
-  assert.ok(node_fs.statSync(pre_commit_path(dir)).mode & 0o100, 'the hook is executable');
+  // Windows has no execute bit; Git for Windows runs hooks through its sh.
+  if (process.platform !== 'win32') assert.ok(node_fs.statSync(pre_commit_path(dir)).mode & 0o100, 'the hook is executable');
 
   run(dir, ['--project', '--quiet']);
   assert.strictEqual(node_fs.readFileSync(pre_commit_path(dir), 'utf8'), written);

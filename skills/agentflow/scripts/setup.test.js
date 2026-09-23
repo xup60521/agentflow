@@ -549,7 +549,7 @@ test('main --fix creates the config file when it does not exist', () => {
   drop(dir)
 })
 
-test('generated zsh, bash, and fish shortcuts execute the installed agf.js and looper.js', () => {
+test('generated zsh, bash, and fish shortcuts execute the installed agf.js and looper.js', { skip: process.platform === 'win32' ? 'POSIX shells; windows.test.js covers PowerShell' : false }, () => {
   const shells = [
     ['zsh', 'zsh'],
     ['bash', 'bash'],

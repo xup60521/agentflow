@@ -2550,21 +2550,28 @@ test('Git timeout reports an unknown push result without claiming no mutation', 
 	const wt = open_stream(dir, 'login page')
 	commit_stream_file(run, wt, 'feature.txt', 'feature\n')
 	const hook = path.join(bare, 'hooks', 'pre-receive')
-	fs.writeFileSync(hook, '#!/bin/sh\nsleep 1\nexit 0\n', { mode: 0o755 })
+	const limit = process.platform === 'win32' ? 3000 : 50
+	fs.writeFileSync(hook, `#!/bin/sh\nsleep ${process.platform === 'win32' ? 4 : 1}\nexit 0\n`, { mode: 0o755 })
 	const previous = process.env.AGF_TEST_GIT_TIMEOUT_MS
 	const logs = []
 	try {
-		process.env.AGF_TEST_GIT_TIMEOUT_MS = '50'
+		process.env.AGF_TEST_GIT_TIMEOUT_MS = String(limit)
 		assert.equal(agf.main(['finish', '--prep'], wt, (message) => logs.push(message)), 1)
 	} finally {
 		if (previous === undefined) delete process.env.AGF_TEST_GIT_TIMEOUT_MS
 		else process.env.AGF_TEST_GIT_TIMEOUT_MS = previous
 	}
 	const text = logs.join('\n')
-	assert.match(text, /timed out after 50ms/)
+	assert.match(text, new RegExp(`timed out after ${limit}ms`))
 	assert.match(text, /result is unknown/)
 	assert.doesNotMatch(text, /default branch was not changed|stream branch is unchanged/)
-	drop(dir, bare)
+	// Windows keeps the bare repository busy until the orphaned hook exits.
+	for (let attempt = 0; ; attempt += 1) {
+		try { drop(dir, bare); break } catch (error) {
+			if (process.platform !== 'win32' || attempt >= 40) throw error
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
+		}
+	}
 })
 
 // ----- agf clean -----

@@ -639,7 +639,7 @@ node_test.test('pipeline_artifacts accepts a valid same-directory basename', () 
 });
 
 [
-	['absolute filename', () => node_path.join(node_os.tmpdir(), 'round-linter-absolute.md'), (artifact_dir, file_name) => write_valid_artifact(node_path.join(artifact_dir, file_name))],
+	['absolute filename', () => node_path.join(node_os.tmpdir(), 'round-linter-absolute.md'), (artifact_dir, file_name) => write_valid_artifact(node_path.join(artifact_dir, file_name.replace(/^[A-Za-z]:/u, '')))],
 	['separator filename', () => 'nested/requirements.md', (artifact_dir, file_name) => write_valid_artifact(node_path.join(artifact_dir, file_name))],
 	['current-directory filename', () => '.', () => {}],
 	['parent-directory filename', () => '..', () => {}],
@@ -715,7 +715,7 @@ node_test.test('pipeline_artifacts rejects a directory entry', () => {
 	node_assert.match(status_for(result, 'pipeline_artifacts').detail, /regular non-symlink file/);
 });
 
-node_test.test('pipeline_artifacts rejects a nonregular entry', () => {
+node_test.test('pipeline_artifacts rejects a nonregular entry', { skip: process.platform === 'win32' ? 'Windows has no FIFOs' : false }, () => {
 	const artifact_dir = node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'round-linter-'));
 	const candidate = node_path.join(artifact_dir, 'requirements.md');
 	node_child_process.execFileSync('mkfifo', [candidate]);
@@ -3135,7 +3135,7 @@ node_test.test('round-linter CLI rejects a non-object context value', () => {
 	node_assert.match(child.stderr, /context JSON must contain one object/);
 });
 
-node_test.test('context reader rejects another nonregular file type before opening it', () => {
+node_test.test('context reader rejects another nonregular file type before opening it', { skip: process.platform === 'win32' ? 'Windows has no FIFOs' : false }, () => {
 	const fixture_dir = node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'round-linter-context-fifo-'));
 	const context_path = node_path.join(fixture_dir, 'facts.json');
 	node_child_process.execFileSync('mkfifo', [context_path]);
@@ -3165,7 +3165,7 @@ node_test.test('context reader detects a same-size in-place change during readin
 	}
 });
 
-node_test.test('context reader rejects pathname replacement while staying on the opened descriptor', () => {
+node_test.test('context reader rejects pathname replacement while staying on the opened descriptor', { skip: process.platform === 'win32' ? 'Windows refuses to replace an open file' : false }, () => {
 	const fixture_dir = node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'round-linter-context-replace-'));
 	const context_path = node_path.join(fixture_dir, 'facts.json');
 	const replacement_path = node_path.join(fixture_dir, 'replacement.json');

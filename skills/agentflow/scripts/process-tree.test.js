@@ -33,7 +33,7 @@ test('detects explicit model and Agentflow entry points', () => {
   ])
 })
 
-test('ignores a fake entry point only below an inspected Node test-runner ancestor', () => {
+test('ignores a fake entry point only below an inspected Node test-runner ancestor', { skip: process.platform === 'win32' ? 'the process-table scan is POSIX-only' : false }, () => {
   const table = process_table([
     [100, 1, '/bin/sh -c node --test /work/scripts.test.js'],
     [200, 100, `${process.execPath} --test /work/scripts.test.js`],
