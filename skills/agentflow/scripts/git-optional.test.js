@@ -236,7 +236,9 @@ test('unexpected Git failures and environment overrides cannot manufacture a pla
   const f = fixture(t);
   const bin = path.join(f.root, 'bin');
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nprocess.stderr.write('fatal: unexpected failure'); process.exit(128);\n`, { mode: 0o755 });
+  // Windows ignores shebangs; a Node binary named git fails on every Git argument list.
+  if (process.platform === 'win32') fs.copyFileSync(process.execPath, path.join(bin, 'git.exe'));
+  else fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nprocess.stderr.write('fatal: unexpected failure'); process.exit(128);\n`, { mode: 0o755 });
   for (const env of [{ ...process.env, PATH: bin }, { ...process.env, GIT_DIR: path.join(f.root, 'absent') }]) {
     const result = f.run('tracker-contract.js', ['validate', '--repo', f.root, '--tracker', tracker_path], undefined, env);
     assert.notEqual(result.status, 0);
@@ -246,7 +248,7 @@ test('unexpected Git failures and environment overrides cannot manufacture a pla
   assert.equal(detect(f.root).state, 'error');
 });
 
-for (const mode of ['plain', 'git']) test(`${mode} tracked completion has a real PTY journey`, t => {
+for (const mode of ['plain', 'git']) test(`${mode} tracked completion has a real PTY journey`, { skip: process.platform === 'win32' ? 'requires /usr/bin/expect and a POSIX terminal' : false }, t => {
   const f = fixture(t);
   if (mode === 'git') {
     initialize_git(f.root);

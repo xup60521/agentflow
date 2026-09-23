@@ -615,7 +615,8 @@ const atomic_replace = (file, content, mode) => {
     if ((actual_mode & mode_mask) !== (mode & mode_mask)) {
       fail(`temporary notebook mode could not be preserved for ${file} (requested ${mode.toString(8)}, observed ${actual_mode.toString(8)})`);
     }
-    node_fs.renameSync(temporary, file);
+    // Windows renames an existing entry to a case alias; keep the stored spelling.
+    node_fs.renameSync(temporary, notebook_owner.filesystem_spelling(file));
     renamed = true;
   } finally {
     if (descriptor !== null) {

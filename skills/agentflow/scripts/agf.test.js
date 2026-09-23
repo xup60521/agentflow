@@ -909,6 +909,49 @@ test('close performs one local notebook replacement and one scoped commit, then 
 	}
 })
 
+test('close verifies a CRLF notebook that core.autocrlf commits as LF and ignores decoys that differ in content', () => {
+	const fixture = close_fixture()
+	try {
+		fixture.run(['config', 'core.autocrlf', 'true'])
+		const notebook_file = path.join(fixture.dir, 'devlog.md')
+		const tracked = fs.readFileSync(notebook_file, 'utf8')
+		fs.rmSync(notebook_file)
+		fixture.run(['checkout', '--', 'devlog.md'])
+		assert.equal(fs.readFileSync(notebook_file, 'utf8'), tracked.replace(/\n/gu, '\r\n'))
+		ownership_fixture.adopt(fixture.dir, 'devlog.md')
+		const manifest = close_manifest(fixture.dir)
+		const close = () => spawnSync(process.execPath, [path.join(__dirname, 'agf.js'), 'close', '--manifest-stdin'], {
+			cwd: fixture.dir, input: JSON.stringify(manifest), encoding: 'utf8',
+		})
+		const first = close()
+		assert.equal(first.status, 0, `${first.stdout}\n${first.stderr}`)
+		const output = JSON.parse(first.stdout)
+		assert.equal(output.commit.state, 'created')
+		const working = fs.readFileSync(notebook_file)
+		const stored = execFileSync('git', ['show', 'HEAD:devlog.md'], { cwd: fixture.dir })
+		assert.ok(working.includes('\r\n'), 'the closed notebook keeps CRLF in the working tree')
+		assert.ok(!stored.includes('\r'), 'core.autocrlf stores the closed notebook as LF')
+
+		const trailer = `decoy\n\nAgentflow-Close-Id: ${output.close_id}\n`
+		const git_input = (args, input) => execFileSync('git', args, { cwd: fixture.dir, input, encoding: 'utf8' }).trim()
+		const decoy = (name, bytes) => {
+			const blob = git_input(['hash-object', '-w', '--stdin'], bytes)
+			const tree = git_input(['mktree'], fixture.run(['ls-tree', 'HEAD']).replace(/^(\d+ blob )[0-9a-f]+(\tdevlog\.md)$/mu, `$1${blob}$2`))
+			fixture.run(['update-ref', `refs/heads/${name}`, git_input(['commit-tree', tree, '-p', 'HEAD', '-F', '-'], trailer)])
+		}
+		decoy('decoy-content', Buffer.from(String(working).replace('Streams: none.', 'Streams: decoy.')))
+		decoy('decoy-lone-cr', Buffer.from(String(working).replace('Streams: none.', 'Streams: no\rne.')))
+
+		const retry = close()
+		assert.equal(retry.status, 0, `${retry.stdout}\n${retry.stderr}`)
+		const again = JSON.parse(retry.stdout)
+		assert.equal(again.commit.state, 'existing')
+		assert.equal(again.commit.sha, output.commit.sha)
+	} finally {
+		drop(fixture.dir)
+	}
+})
+
 test('close rejects a repository change immediately before notebook replacement', () => {
 	const fixture = close_fixture()
 	const wrapper = make_git_wrapper('race-before-replace')

@@ -10,6 +10,8 @@ const ag_settings = require('./ag-settings.js');
 const { format_local_timestamp } = require('./local-time.js');
 
 const SCRIPT = node_path.join(__dirname, 'notebook-write.js');
+// Windows exposes only the writable attribute as owner-write.
+const native_mode = mode => process.platform === 'win32' ? (mode & 0o200 ? 0o666 : 0o444) : mode;
 const ownership_fixture = require('./fixtures/notebook-owner');
 ownership_fixture.configure();
 
@@ -643,7 +645,7 @@ node_test.test('append-wip preserves notebook bytes outside the insertion and pr
   node_assert.ok(draft_start > 0);
   node_assert.deepEqual(after.subarray(0, draft_start), before);
   node_assert.deepEqual(after.subarray(draft_start), draft_bytes);
-  node_assert.equal(node_fs.statSync(fixture.notebook_file).mode & 0o7777, 0o640);
+  node_assert.equal(node_fs.statSync(fixture.notebook_file).mode & 0o7777, native_mode(0o640));
   node_assert.equal(node_fs.existsSync(fixture.draft_file), false);
 });
 
@@ -940,7 +942,7 @@ node_test.test('append-reply closes only the exact final Ask and creates the nex
   const text = after.toString('utf8');
   node_assert.equal((text.match(/# ← Reply \/ A-002/g) || []).length, 1);
   node_assert.match(text, /# ← Reply \/ A-002[\s\S]*---\n\n# → Ask \/ A-003\n\n\+\n$/u);
-  node_assert.equal(node_fs.statSync(notebook_file).mode & 0o7777, 0o640);
+  node_assert.equal(node_fs.statSync(notebook_file).mode & 0o7777, native_mode(0o640));
   node_assert.equal(node_fs.existsSync(node_path.join(root, draft_path)), false);
 });
 

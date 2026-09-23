@@ -131,6 +131,18 @@ for (const invocation of ['canonical', 'case-alias', 'case-alias-capture']) test
   assert.equal(settings.validate_status_projection(fs.readFileSync(path.join(root, renamed), 'utf8')).valid, true);
 });
 
+test('compaction extends an archive stored under a case alias without respelling it', t => {
+  const prior = closed('A-001', 'already archived');
+  const recent = closed('A-002', 'just completed');
+  const f = fixture(recent);
+  const stored = path.join(f.root, '.agentflow/devlog.ARCHIVE.md');
+  fs.writeFileSync(stored, prior);
+  if (!fs.existsSync(f.archive)) { t.skip('native case alias requires a case-insensitive volume'); return; }
+  compact(f);
+  assert.deepEqual(fs.readdirSync(path.dirname(stored)).filter(name => /archive/iu.test(name)), ['devlog.ARCHIVE.md']);
+  assert.deepEqual(fs.readFileSync(stored), Buffer.from(prior + recent));
+});
+
 test('archive collision and symlink refuse compaction without changing live bytes', () => {
   for (const kind of ['collision', 'symlink']) {
     const f = fixture(closed('A-001'));
