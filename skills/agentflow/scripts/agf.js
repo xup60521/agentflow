@@ -989,6 +989,12 @@ const real_path = (value) => {
 	try { return fs.realpathSync(value) } catch { return path.resolve(value) }
 }
 
+// Running-host guards: win32 folders are case-insensitive, so a spelling that
+// differs only by case is the same folder and must still be refused.
+const same_folder = (left, right) => process.platform === 'win32'
+	? real_path(left).toLowerCase() === real_path(right).toLowerCase()
+	: real_path(left) === real_path(right)
+
 const shell_quote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`
 
 const local_branches = (repo) => {
@@ -2150,7 +2156,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// Guard 3 — never remove the folder still used by the running host. A shell
 	// function can cd after this child exits, but an AI host runs its Stop hook
 	// first; deleting cwd prevents the operating system from starting that hook. — I-058.
-	if (real_path(top.out) === real_path(wt)) {
+	if (same_folder(top.out, wt)) {
 		log(`${wt_rel} is still using this running host as its current folder — nothing was changed`)
 		log(`exit this session, then clean up from the main project folder with:  cd ${shell_quote(repo)} && agf cleanup ${shell_quote(key)}`)
 		return 1
@@ -2408,7 +2414,7 @@ const ditch_main = (argv, cwd, log, ask = ask_tty, width = 80) => {
 
 	const wt_rel = path.join('.worktrees', key)
 	const wt = path.join(repo, wt_rel)
-	if (real_path(top.out) === real_path(wt)) { log('exit this stream session and run ditch from the main project folder'); return 1 }
+	if (same_folder(top.out, wt)) { log('exit this stream session and run ditch from the main project folder'); return 1 }
 	const destination = deletion_remote(repo)
 	if (destination.error) { log(`${destination.error} — nothing was changed`); return 1 }
 	const snapshot = discard_snapshot(repo, key, wt, destination.url)
