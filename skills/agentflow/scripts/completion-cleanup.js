@@ -10,20 +10,56 @@ const round_linter = require('./round-linter.js')
 const { parse_numeric_timestamp } = require('./local-time.js')
 const { launch_command, resolve_launch } = require('./executable-launch.js')
 
-// Windows has no trash command. An installed one (such as trash-cli) still
-// wins; otherwise the item goes to the Recycle Bin through .NET, with its path
-// passed in the environment so no shell ever parses it.
+// Only macOS ships a trash command. An installed one (such as trash-cli) still
+// wins elsewhere. Otherwise Windows uses the Recycle Bin through .NET, with the
+// path passed in the environment so no shell parses it, and Linux uses
+// `gio trash` or, without GLib, the freedesktop.org home trash directly.
 const RECYCLE_BIN_SCRIPT = [
 	'Add-Type -AssemblyName Microsoft.VisualBasic',
 	'$item = $env:AGF_TRASH_PATH',
 	"if (Test-Path -LiteralPath $item -PathType Container) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($item, 'OnlyErrorDialogs', 'SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($item, 'OnlyErrorDialogs', 'SendToRecycleBin') }",
 ].join('; ')
 
+const two = value => String(value).padStart(2, '0')
+const trash_info_date = date => `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`
+
+// https://specifications.freedesktop.org/trash-spec/ — a rename, so it stays on
+// one filesystem; a record on another mount reports EXDEV and is kept.
+const move_to_home_trash = file => {
+	const absolute = node_path.resolve(file)
+	const data_home = process.env.XDG_DATA_HOME || node_path.join(require('node:os').homedir(), '.local', 'share')
+	const trash = node_path.join(data_home, 'Trash')
+	const files = node_path.join(trash, 'files'), info = node_path.join(trash, 'info')
+	node_fs.mkdirSync(files, { recursive: true, mode: 0o700 })
+	node_fs.mkdirSync(info, { recursive: true, mode: 0o700 })
+	const base = node_path.basename(absolute)
+	for (let attempt = 0; attempt < 1000; attempt += 1) {
+		const name = attempt === 0 ? base : `${base}.${attempt}`
+		const info_file = node_path.join(info, `${name}.trashinfo`)
+		let descriptor
+		try { descriptor = node_fs.openSync(info_file, 'wx', 0o600) } catch (error) { if (error.code === 'EEXIST') continue; throw error }
+		try {
+			node_fs.writeSync(descriptor, `[Trash Info]\nPath=${encodeURI(absolute).replace(/[?#]/gu, encodeURIComponent)}\nDeletionDate=${trash_info_date(new Date())}\n`)
+		} finally { node_fs.closeSync(descriptor) }
+		const destination = node_path.join(files, name)
+		if (node_fs.existsSync(destination)) { node_fs.rmSync(info_file); continue }
+		try { node_fs.renameSync(absolute, destination) } catch (error) { node_fs.rmSync(info_file, { force: true }); throw error }
+		return
+	}
+	throw new Error(`no free name for ${base} in ${files}`)
+}
+
 const move_to_trash = (file, options = {}) => {
-	if (process.platform !== 'win32') return void node_child_process.execFileSync('trash', [file], options)
+	if (process.platform === 'darwin') return void node_child_process.execFileSync('trash', [file], options)
 	if (resolve_launch('trash') !== null) {
 		const launch = launch_command('trash', [file])
 		return void node_child_process.execFileSync(launch.file, launch.args, { ...options, windowsHide: true })
+	}
+	if (process.platform !== 'win32') {
+		if (resolve_launch('gio') !== null) {
+			try { return void node_child_process.execFileSync('gio', ['trash', '--', file], { ...options, stdio: 'pipe' }) } catch { /* headless GLib; use the home trash */ }
+		}
+		return move_to_home_trash(file)
 	}
 	node_child_process.execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', RECYCLE_BIN_SCRIPT], {
 		...options,
