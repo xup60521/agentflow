@@ -4,7 +4,7 @@
 
 - **Work key:** A-001-opencode-support.
 
-- **Active Ask:** A-001.
+- **Active Ask:** A-003.
 
 - **Goal:** Deliver an implementation-ready plan for first-class OpenCode support with configurable provider/model and reasoning effort.
 
@@ -14,15 +14,15 @@
 
 ## Overall state
 
-- **State:** complete.
+- **State:** active.
 
-- **Reason:** The corrected plan passed independent review for outcome, minimality, and conformance.
+- **Reason:** Design Go approved implementation; the schema/host/dispatch foundation is committed and OpenCode lifecycle integration remains.
 
-- **Total:** 3.
+- **Total:** 6.
 
-- **Completed:** 3.
+- **Completed:** 4.
 
-- **Remaining:** 0.
+- **Remaining:** 2.
 
 ## Accepted task checklist
 
@@ -32,35 +32,41 @@
 
 - [x] **T-3:** Correct the independent review findings, re-run the bounded cross-check, and close only on PASS. Proof: corrected plan commit `525ff21867cf990786e5b57ebfa60c29e7285470`; `cross-check-report-2.md` returned Outcome PASS, Minimality PASS, and Conformance PASS. Source: A-001.
 
+- [x] **T-4:** Add schema-v8 structured model/effort selections, OpenCode host identity, and literal OpenCode worker flags. Paths: `skills/agentflow/scripts/{ag-settings,agf,completion-context,dispatch-review,looper,notebook-write,resume-intake,stop-hook}.js` and focused tests. Proof: targeted Node tests pass and commit `413cb7d`. Source: A-003.
+
+- [ ] **T-5:** Add ownership-safe OpenCode skill/plugin setup, prompt capture, idle closeout, uninstall, and Windows launch handling. Proof: focused setup/plugin tests. Failure handling: do not advertise coordinator support until lifecycle tests pass. Source: A-003.
+
+- [ ] **T-6:** Update documentation/release metadata and run regressions plus the real OpenCode PTY/provider journey. Proof: applicable suites, independent review, and Result Go for the final implementation commit. Source: A-003.
+
 ## Accepted scope changes
 
 - None.
 
 ## Current recovery
 
-- **Current item:** None.
+- **Current item:** T-5.
 
-- **Last proven result:** Corrected plan review passed Outcome, Minimality, and Conformance; host inspection confirmed the plugin path and reduced discovery scope in the saved plan.
+- **Last proven result:** Schema-v8 selections and exact OpenCode dispatch flags pass focused tests; all three host templates validate.
 
 - **Active blocker or running process:** None.
 
-- **Next safe action:** None.
+- **Next safe action:** Implement and test the OpenCode-owned plugin/skill lifecycle without changing unrelated host files.
 
 - **Expected changed files:** `.agentflow/artifacts/A-001-opencode-support/design.md`, `.agentflow/artifacts/A-001-opencode-support/tracker.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-facts.json`, `.agentflow/artifacts/A-001-opencode-support/cross-check-brief.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-report.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-report.md.dispatch.json`, `.agentflow/artifacts/A-001-opencode-support/cross-check-brief-2.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-report-2.md`, `.agentflow/artifacts/A-001-opencode-support/cross-check-report-2.md.dispatch.json`, `.agentflow/devlog.md`, `.gitignore`, `ag.json`.
 
 ## Completion proof
 
-- **All accepted tasks checked:** yes.
+- **All accepted tasks checked:** no.
 
 - **Blocking accepted decision:** none.
 
 - **Operation running:** no.
 
-- **Next action remaining:** none.
+- **Next action remaining:** T-5 and T-6.
 
-- **Evidence status:** complete.
+- **Evidence status:** partial.
 
-- **Judgment:** complete.
+- **Judgment:** active.
 
 ## Update meaning
 

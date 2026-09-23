@@ -23,6 +23,7 @@ const { TextDecoder } = require('node:util')
 const ag_settings = require('./ag-settings.js')
 const install_hook = require('./install-hook.js')
 const setup = require('./setup.js')
+const opencode_integration = require('./opencode-integration.js')
 const resume_intake = require('./resume-intake.js')
 const notebook_writer = require('./notebook-write.js')
 const completion_context = require('./completion-context.js')
@@ -808,9 +809,12 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 	if (git_identity.error) throw new Error(git_identity.error)
 	let configured_target = '.agentflow/devlog.md'
 	let config_file = path.join(repo, 'ag.json')
+	let configured_selection = null
 	if (fs.existsSync(config_file)) {
 		const existing_config = ag_settings.load_config(config_file, { repo_root: repo, active_host: args.host })
 		configured_target = existing_config.switches['target-doc'] || configured_target
+		const profile = existing_config['external-workers'].find(item => item.family === args.host)
+		configured_selection = profile ? ag_settings.parse_model_selection(profile.tiers.basic) : null
 	}
 	if (top.ok && fs.statSync(path.join(repo, '.git')).isFile()) {
 		configured_target = stream_doc(repo, git_identity.branch)
@@ -845,7 +849,7 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 				config_path: config_file,
 				explicit_host: args.host,
 			})
-			: ag_settings.initialize_project({ repo_root: repo, explicit_host: args.host })
+			: ag_settings.initialize_project({ repo_root: repo, explicit_host: args.host, ...(configured_selection || {}) })
 		const notebook = start_relative(repo, initialized.notebook_path || path.join(repo, initialized.config.switches['target-doc']))
 		const paths = start_snapshot_paths(repo, args.host, notebook)
 		const notebook_file = path.join(repo, notebook)
@@ -2223,12 +2227,37 @@ const uninstall_main = (argv, cwd, log, ask, width = 80) => {
 	})
 }
 
-const setup_help = width => `${usage_words('usage: agf setup [--fix]', width).join('\n')}\n\n${usage_words('--fix previews and offers to install or update the managed agf and agf-looper shell shortcuts.', width).join('\n')}\n`
+const setup_help = width => `${usage_words('usage: agf setup [--fix] | agf setup --host opencode --model <provider/model> --effort <variant|default> [--off]', width).join('\n')}\n\n${usage_words('--fix manages shell shortcuts. OpenCode setup installs the project skill link, plugin, and schema-v8 worker selection; --off removes only verified Agentflow-owned OpenCode files.', width).join('\n')}\n`
 
 const setup_main = (argv, cwd, log, ask, width = 80) => {
 	if (argv.some(argument => argument === '-h' || argument === '--help')) {
 		log(setup_help(width))
 		return 0
+	}
+	if (argv.includes('--host')) {
+		const value = flag => {
+			const index = argv.indexOf(flag)
+			return index >= 0 ? argv[index + 1] : undefined
+		}
+		const allowed = new Set(['--host', '--model', '--effort', '--off'])
+		for (let index = 0; index < argv.length; index += 1) {
+			if (!allowed.has(argv[index])) { log(`unknown setup option "${argv[index]}"\n\n${setup_help(width)}`); return 1 }
+			if (argv[index] !== '--off') index += 1
+		}
+		if (value('--host') !== 'opencode') { log('project host setup currently supports only opencode'); return 1 }
+		try {
+			if (argv.includes('--off')) {
+				opencode_integration.uninstall({ repo: cwd, skill_dir: path.resolve(__dirname, '..') })
+				log('removed verified Agentflow OpenCode project files; ag.json was preserved')
+			} else {
+				const result = opencode_integration.install({ repo: cwd, skill_dir: path.resolve(__dirname, '..'), model: value('--model'), effort: value('--effort') || 'default' })
+				log(`installed Agentflow OpenCode integration at ${path.relative(cwd, result.plugin)}; restart OpenCode to load it`)
+			}
+			return 0
+		} catch (error) {
+			log(error.message)
+			return 1
+		}
 	}
 	const unknown = argv.find(argument => argument !== '--fix')
 	if (unknown) {

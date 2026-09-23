@@ -957,7 +957,7 @@ const ensure_configuration = (options = {}) => {
 	}
 
 	const active_host = detect_host(options)
-	const config = make_template(active_host)
+	const config = make_template(active_host, options.selection || { model: options.model, effort: options.effort })
 	config.switches.lang = detect_initial_language(options)
 	config.switches['target-doc'] = relative_notebook_path(repo_root, notebook_path)
 	write_config_atomic(config_path, config, { ...options, repo_root, active_host })
@@ -983,7 +983,7 @@ const format_ask_heading = (ask, { config, repo_root = process.cwd(), notebook_p
 const initialize_project = (options = {}) => {
 	const repo_root = node_path.resolve(options.repo_root || process.cwd())
 	const active_host = detect_host(options)
-	const template = make_template(active_host)
+	const template = make_template(active_host, options.selection || { model: options.model, effort: options.effort })
 	template.switches['workspace-dir'] = '.agentflow'
 	template.switches['target-doc'] = '.agentflow/devlog.md'
 	const notebook_path = options.notebook_path || workspace_paths(template).notebook

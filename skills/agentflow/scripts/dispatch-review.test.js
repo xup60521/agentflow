@@ -135,6 +135,20 @@ node_test.test('an npm-only Codex counts as available and launches through the s
   }
 })
 
+node_test.test('an npm-only OpenCode counts as available and launches through its safe shim', () => {
+  const root = node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'agentflow-dispatch-'))
+  const bin = node_path.join(root, 'bin')
+  const entrypoint = node_path.join(bin, 'node_modules', 'opencode-ai', 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode')
+  try {
+    node_fs.mkdirSync(node_path.dirname(entrypoint), { recursive: true })
+    node_fs.writeFileSync(entrypoint, '')
+    node_assert.equal(worker_availability({ path_value: bin })('opencode'), true)
+    const launch = resolve_launch('opencode', { path_value: bin })
+    node_assert.equal(launch.via, 'npm-package')
+    node_assert.equal(node_path.basename(launch.prefix_args[0]), 'opencode-worker.js')
+  } finally { node_fs.rmSync(root, { recursive: true, force: true }) }
+})
+
 node_test.test('an explicit executables answer is not widened by a filesystem probe', () => {
   const available = worker_availability({ executables: ['claude'] })
   node_assert.equal(available('claude'), true)

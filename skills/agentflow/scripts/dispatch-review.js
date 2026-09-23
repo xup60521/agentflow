@@ -9,12 +9,14 @@ const node_fs = require('node:fs')
 const node_path = require('node:path')
 const { run_external_command } = require('./external-runner.js')
 const { find_codex_entrypoint } = require('./codex-worker.js')
+const { find_opencode_entrypoint } = require('./opencode-worker.js')
 const ag_settings = require('./ag-settings.js')
 
 const REPORT_MAX_BYTES = 400_000
 const DIAGNOSTIC_MAX_BYTES = 4096
 const MARKER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const CODEX_WORKER = node_path.join(__dirname, 'codex-worker.js')
+const OPENCODE_WORKER = node_path.join(__dirname, 'opencode-worker.js')
 const USAGE = [
   'usage: node dispatch-review.js --repo <path> --brief <path> --output <path>',
   '                              --stage <name> --marker <token>',
@@ -71,6 +73,8 @@ const resolve_host = (explicit, options = {}) => {
 // package entrypoint, so count it as available and route the launch there.
 const codex_package_available = (command, options = {}) =>
   command === 'codex' && find_codex_entrypoint(options.path_value === undefined ? process.env.PATH : options.path_value) !== null
+const opencode_package_available = (command, options = {}) =>
+  command === 'opencode' && find_opencode_entrypoint(options.path_value === undefined ? process.env.PATH : options.path_value) !== null
 
 const worker_availability = (options = {}) => command => {
   if (ag_settings.executable_available(command, options) === true) return true
@@ -78,12 +82,15 @@ const worker_availability = (options = {}) => command => {
   // statement of availability; widening it with a filesystem probe would let
   // the real machine leak into a decision the caller already made.
   if (options.executables !== undefined || typeof options.command_exists === 'function') return false
-  return codex_package_available(command, options)
+  return codex_package_available(command, options) || opencode_package_available(command, options)
 }
 
-const resolve_launch = (executable, options = {}) => ag_settings.executable_available(executable, options)
-  ? { executable, prefix_args: [], via: 'native' }
-  : { executable: process.execPath, prefix_args: [CODEX_WORKER], via: 'npm-package' }
+const resolve_launch = (executable, options = {}) => {
+  if (ag_settings.executable_available(executable, options)) return { executable, prefix_args: [], via: 'native' }
+  if (executable === 'codex') return { executable: process.execPath, prefix_args: [CODEX_WORKER], via: 'npm-package' }
+  if (executable === 'opencode') return { executable: process.execPath, prefix_args: [OPENCODE_WORKER], via: 'npm-package' }
+  return { executable, prefix_args: [], via: 'unavailable' }
+}
 
 // round-linter.js requires the worker stamp as the report's first line, but a
 // chat-style CLI prepends a sentence, which fails the gate on framing rather
