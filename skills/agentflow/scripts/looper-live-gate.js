@@ -127,11 +127,23 @@ const verify_gate = ({ repo, process_status }) => {
   return { passed: failures.length === 0, checks, failures }
 }
 
+// Windows installs the shortcut into a PowerShell profile and runs it there.
+const windows = process.platform === 'win32'
+
 const install_shortcut = ({ home, skill_dir }) => {
   const installed = path.join(home, '.codex', 'skills', 'agentflow')
   fs.mkdirSync(path.dirname(installed), { recursive: true })
-  fs.symlinkSync(skill_dir, installed, 'dir')
+  fs.symlinkSync(skill_dir, installed, windows ? 'junction' : 'dir')
   const setup = path.join(skill_dir, 'scripts', 'setup.js')
+  if (windows) {
+    const profile = path.join(home, 'profile.ps1')
+    require_success(run(process.execPath, [setup, '--fix', '--profile', profile], {
+      env: { ...process.env, HOME: home, USERPROFILE: home, AGF_OPEN: 'true' },
+      input: 'y\n',
+    }), 'real PowerShell shortcut installation')
+    if (!/function agf-looper\b/u.test(fs.readFileSync(profile, 'utf8'))) throw fail('setup succeeded without installing agf-looper')
+    return profile
+  }
   require_success(run(process.execPath, [setup, '--fix'], {
     env: { ...process.env, HOME: home, SHELL: '/bin/zsh', AGF_OPEN: 'true' },
     input: 'y\n',
@@ -166,7 +178,14 @@ const execute_gate = (options = {}) => {
     git(repo, ['add', 'ag.json', '.agentflow', '.gitignore'])
     git(repo, ['commit', '-qm', 'Initialize looper live gate'])
     const shell_file = install_shortcut({ home, skill_dir })
-    const result = run('/bin/zsh', ['-c', `source "$1" && agf-looper`, 'looper-live-gate', shell_file], {
+    const result = windows
+      ? run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `. '${shell_file.replaceAll("'", "''")}'; agf-looper; exit $LASTEXITCODE`], {
+        cwd: repo,
+        env: { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: codex_home, XDG_STATE_HOME: state_root },
+        timeout: options.timeout_ms || 20 * 60 * 1000,
+        maxBuffer: 1024 * 1024,
+      })
+      : run('/bin/zsh', ['-c', `source "$1" && agf-looper`, 'looper-live-gate', shell_file], {
       cwd: repo,
       env: { ...process.env, HOME: home, CODEX_HOME: codex_home, SHELL: '/bin/zsh', XDG_STATE_HOME: state_root },
       timeout: options.timeout_ms || 20 * 60 * 1000,
