@@ -941,6 +941,9 @@ const temporary_path = file_path => {
 	return `${file_path}.tmp-${process.pid}-${Date.now()}-${temp_counter}`
 }
 
+// Entries init adds to .gitignore; startup recognizes exactly this bootstrap.
+const ignore_entries = Object.freeze(['.claude/', '.codex/', '.opencode/', '.worktrees/'])
+
 const write_text_atomic = (file_path, text, options = {}) => {
 	const fs_api = options.fs || node_fs
 	const parent = node_path.dirname(file_path)
@@ -2056,6 +2059,7 @@ const cli_main = (argv, io = {}) => {
 
 module.exports = {
 	SettingsError,
+	ignore_entries,
 	schema_version,
 	git_timeout_default_ms,
 	tier_names,
