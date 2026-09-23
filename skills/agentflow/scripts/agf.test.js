@@ -2561,6 +2561,39 @@ test('cleanup preserves the worktree used by the running host and redirects clea
 	drop(dir)
 })
 
+// Git reports the resolved toplevel while the stream folder is spelled through
+// the linked .worktrees; the guard must still see the same folder.
+for (const command of ['cleanup', 'ditch']) test(`${command} refuses the running host's worktree reached through a linked .worktrees folder`, () => {
+	const { dir, run } = make_repo()
+	const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-linked-')))
+	fs.symlinkSync(elsewhere, path.join(dir, '.worktrees'), process.platform === 'win32' ? 'junction' : 'dir')
+	const wt = open_stream(dir, 'login page')
+	const main_before = run(['rev-parse', 'main'])
+	const logs = []
+
+	assert.equal(agf.main([command, 'login-page'], wt, (message) => logs.push(message), () => 'Y\n'), 1)
+	assert.ok(fs.existsSync(path.join(elsewhere, 'login-page', '.git')), 'the worktree folder is kept')
+	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'), 'the branch is kept')
+	assert.equal(run(['rev-parse', 'main']), main_before)
+	assert.ok(logs.some((line) => command === 'cleanup' ? line.includes('still using') : line.includes('exit this stream session')), logs.join('\n'))
+	fs.unlinkSync(path.join(dir, '.worktrees'))
+	drop(dir, elsewhere)
+})
+
+// win32 folders are case-insensitive; a differently cased spelling is the same folder.
+if (process.platform === 'win32') for (const command of ['cleanup', 'ditch']) test(`${command} refuses the running host's worktree spelled with a different case`, () => {
+	const { dir, run } = make_repo()
+	const wt = open_stream(dir, 'login page')
+	const logs = []
+	const swap = (value) => value.replace(/[a-z]/gi, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase())
+
+	assert.equal(agf.main([command, 'login-page'], swap(wt), (message) => logs.push(message), () => 'Y\n'), 1)
+	assert.ok(fs.existsSync(path.join(wt, '.git')), 'the worktree folder is kept')
+	assert.ok(run(['branch', '--list', 'login-page']).includes('login-page'), 'the branch is kept')
+	assert.ok(logs.some((line) => command === 'cleanup' ? line.includes('still using') : line.includes('exit this stream session')), logs.join('\n'))
+	drop(dir)
+})
+
 test('cleanup refuses when the main folder is on another branch', () => {
 	const { dir, run } = make_repo()
 	open_stream(dir, 'login page')

@@ -2146,7 +2146,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// Guard 3 — never remove the folder still used by the running host. A shell
 	// function can cd after this child exits, but an AI host runs its Stop hook
 	// first; deleting cwd prevents the operating system from starting that hook. — I-058.
-	if (path.resolve(top.out) === path.resolve(wt)) {
+	if (real_path(top.out) === real_path(wt)) {
 		log(`${wt_rel} is still using this running host as its current folder — nothing was changed`)
 		log(`exit this session, then clean up from the main project folder with:  cd ${shell_quote(repo)} && agf cleanup ${shell_quote(key)}`)
 		return 1
