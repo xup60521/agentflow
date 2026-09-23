@@ -570,6 +570,15 @@ const close_find_commit = (repo, close_id, notebook, expected_bytes) => {
 		if (!identity.error && identity.state === 'unborn') return { sha: null }
 		return { error: git_failure_detail('reading closeout history', history) }
 	}
+	// Compare Git's stored form: autocrlf or attributes may normalize the committed bytes.
+	let expected_blob
+	if (expected_bytes !== undefined) {
+		try {
+			expected_blob = String(execFileSync('git', ['hash-object', `--path=${notebook}`, '--stdin'], { cwd: repo, input: expected_bytes, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: git_timeout_ms(repo) })).trim()
+		} catch (err) {
+			return { error: `hashing the closeout notebook failed: ${sanitize_diagnostic(err.stderr || err.message)}` }
+		}
+	}
 	const matches = []
 	const records = String(history.out).split('\0')
 	for (let index = 0; index + 1 < records.length; index += 1) {
@@ -578,8 +587,8 @@ const close_find_commit = (repo, close_id, notebook, expected_bytes) => {
 		if (!/^[0-9a-f]{40}$/u.test(sha)) continue
 		const trailer = message.match(new RegExp(`^Agentflow-Close-Id: ${close_id}$`, 'gmu'))
 		if (trailer === null || trailer.length !== 1) continue
-		const blob = git_blob(repo, ['show', `${sha}:${notebook}`])
-		if (blob.ok && Buffer.isBuffer(blob.out) && (expected_bytes === undefined || blob.out.equals(expected_bytes))) matches.push(sha)
+		const blob = git(repo, ['rev-parse', '--verify', '--quiet', `${sha}:${notebook}`])
+		if (blob.ok && /^[0-9a-f]{40,64}$/u.test(blob.out) && (expected_blob === undefined || blob.out === expected_blob)) matches.push(sha)
 	}
 	if (matches.length > 1) return { error: 'more than one matching Agentflow-Close-Id commit was found' }
 	return { sha: matches[0] || null }
