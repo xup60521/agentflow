@@ -76,7 +76,13 @@ const powershell_argument = value => value.startsWith('$HOME/')
 
 const agf_function_for = (shell, script_path) => {
   if (shell === 'powershell') return `function agf {
-  $dir = & node ${powershell_argument(script_path)} @args
+  $previousOutputEncoding = $OutputEncoding
+  try {
+    $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $dir = $input | & node ${powershell_argument(script_path)} @args
+  } finally {
+    $OutputEncoding = $previousOutputEncoding
+  }
   if ($LASTEXITCODE -ne 0) { return }
   if ($dir) { Set-Location -LiteralPath $dir }
 }`
@@ -349,7 +355,7 @@ const uninstall_main = (opts = {}) => {
 
   if (next !== original) {
     backup_config(cfg)
-    fs.writeFileSync(cfg, next)
+    fs.writeFileSync(cfg, shell === 'powershell' && !next.startsWith('\uFEFF') ? `\uFEFF${next}` : next)
     say(`removed managed shell settings from ${cfg}`)
   }
   if (opts.after_confirm && opts.after_confirm() !== 0) return 1
@@ -497,7 +503,7 @@ const main = (opts = {}) => {
 
   backup_config(cfg)
   fs.mkdirSync(path.dirname(cfg), { recursive: true })
-  fs.writeFileSync(cfg, next_content)
+  fs.writeFileSync(cfg, shell === 'powershell' && !next_content.startsWith('\uFEFF') ? `\uFEFF${next_content}` : next_content)
   say(`done — open a new terminal tab or run \`${shell === 'powershell' ? `. ${powershell_argument(cfg)}` : `source ${cfg}`}\`.`)
 
   write_marker(marker)
