@@ -7,9 +7,9 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawn: node_spawn, spawnSync: node_spawn_sync } = require('node:child_process')
 const { StringDecoder } = require('node:string_decoder')
-const { contain_nested_processes, find_nested_processes, read_process_table } = require('./process-tree')
+const { contain_nested_processes, find_nested_processes, read_process_table, send_tree_signal } = require('./process-tree')
 const { format_local_timestamp } = require('./local-time')
-const { launch_command } = require('./executable-launch')
+const { executable_name, launch_command } = require('./executable-launch')
 const agentflow_settings = require('./ag-settings')
 const queue_contract = require('./queue-contract')
 const delegation_route = require('./delegation-route')
@@ -607,6 +607,15 @@ const verify_directory_identity = (file_system, directory, expected, label) => {
   return true
 }
 
+// Windows reports every file and directory as 0o666 and grants access
+// through ACLs, so POSIX group/other and execute bits carry no meaning there.
+// The state directory still lives under the user's profile, and executables
+// are recognized by the extensions CreateProcess can launch directly.
+const has_shared_mode_bits = stat => process.platform !== 'win32' && (stat.mode & 0o077) !== 0
+const is_executable_file = (file, stat) => process.platform === 'win32'
+  ? /\.(?:exe|com)$/iu.test(file)
+  : (stat.mode & 0o111) !== 0
+
 const verify_protected_state = (context) => {
   let stat
   try {
@@ -618,7 +627,7 @@ const verify_protected_state = (context) => {
     throw looper_error(`protected state directory is not a real directory at ${context.state_dir}`)
   if (!same_node_identity(node_identity(stat), context.state_identity))
     throw looper_error(`protected state directory was replaced at ${context.state_dir}; human review required`)
-  if ((stat.mode & 0o077) !== 0)
+  if (has_shared_mode_bits(stat))
     throw looper_error(`protected state directory has group or other permission bits at ${context.state_dir}`)
   if (typeof process.getuid === 'function' && stat.uid !== process.getuid())
     throw looper_error(`protected state directory has the wrong owner at ${context.state_dir}`)
@@ -675,7 +684,7 @@ const prepare_state = (context) => {
     const state_stat = context.file_system.lstatSync(state_dir)
     if (state_stat.isSymbolicLink() || !state_stat.isDirectory())
       throw new Error('protected state directory is not a real directory')
-    if ((state_stat.mode & 0o077) !== 0)
+    if (has_shared_mode_bits(state_stat))
       throw new Error('protected state directory has group or other permission bits')
     if (typeof process.getuid === 'function' && state_stat.uid !== process.getuid())
       throw new Error('protected state directory has the wrong owner')
@@ -739,7 +748,7 @@ const make_context = (options) => {
     lock_identity: null,
     owner_identity: null,
     generated_queue_authority: null,
-    worker_family: options.executable && path.basename(String(options.executable)) === 'codex' ? 'codex' : null,
+    worker_family: options.executable && executable_name(options.executable) === 'codex' ? 'codex' : null,
     worker_model: null,
     worker_effort: null,
     completion_message_file: null,
@@ -860,11 +869,11 @@ const configure_child = (context) => {
   if (config['pipeline-roles']?.implementation === 'off') throw looper_error('implementation role is off; no queue worker can start')
   const available = context.options.executable_available || (command => {
     if (!path.isAbsolute(command)) return agentflow_settings.executable_available(command)
-    try { return fs.statSync(command).isFile() && (fs.statSync(command).mode & 0o111) !== 0 } catch { return false }
+    try { return fs.statSync(command).isFile() && is_executable_file(command, fs.statSync(command)) } catch { return false }
   })
   const profiles = (config['external-workers'] || []).map(profile => {
     const command = context.options.executable ? [context.options.executable, ...profile.command.slice(1)] : profile.command
-    const executable = path.basename(command[0])
+    const executable = executable_name(command[0])
     return { ...profile, command, candidate_id: profile.id, available: available(command[0]) === true,
       recipe_checked: (executable === 'codex' && command.includes('exec')) || (executable === 'claude' && command.includes('-p')) }
   })
@@ -1370,14 +1379,9 @@ const read_completion_message = (context) => {
   return text === context.completion_line || text === `${context.completion_line}\n` ? 1 : 0
 }
 
-const send_group_signal = (child, signal) => {
-  if (!child || !child.pid) return
-  if (process.platform === 'win32') {
-    child.kill(signal)
-    return
-  }
-  process.kill(-child.pid, signal)
-}
+// On Windows child.kill() stops only the root, so a worker launched through a
+// wrapper keeps running; the tree kill reaches its descendants.
+const send_group_signal = (child, signal) => send_tree_signal(child, signal)
 
 const best_effort_kill = (child, signal = 'SIGKILL') => {
   try {

@@ -783,7 +783,7 @@ test('failure result gives a concrete review checklist and paths', async () => {
   }
 })
 
-test('nested worker violations preserve the plan and produce a recovery warning', async () => {
+test('nested worker violations preserve the plan and produce a recovery warning', { skip: process.platform === 'win32' ? 'Windows has no process table to scan for nested workers' : false }, async () => {
   const dir = make_temp_dir('agentflow-looper-nested-worker')
   const queue = make_queue()
   const nested_executable = path.join(dir, 'codex')
@@ -2216,7 +2216,7 @@ test('canonical queue replacement before archive stops without moving either pla
   }
 })
 
-test('pre-existing protected state requires a real directory, matching owner, and no group or other permission bit', async (t) => {
+test('pre-existing protected state requires a real directory, matching owner, and no group or other permission bit', { skip: process.platform === 'win32' ? 'requires POSIX owner and permission bits' : false }, async (t) => {
   await t.test('wrong owner is refused', async () => {
     const dir = make_temp_dir('agentflow-looper-state-owner')
     try {
@@ -3004,7 +3004,7 @@ const wait_for_file = async (file, timeout = 5000) => {
   }
 }
 
-test('SIGINT and SIGTERM record interruption before forwarding and stop the detached fake group', async (t) => {
+test('SIGINT and SIGTERM record interruption before forwarding and stop the detached fake group', { skip: process.platform === 'win32' ? 'Windows cannot deliver SIGINT or SIGTERM to another process' : false }, async (t) => {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     await t.test(signal, async () => {
       const dir = make_temp_dir(`agentflow-looper-${signal}`)
