@@ -73,7 +73,8 @@ const publish_archive = ({ file, original, additions, notebook_file, notebook })
     if (writer.read_regular_file(temporary, 'archive', () => {}).hash !== expected) throw Error('archive copy verification failed');
     verify_archive(file, original);
     writer.verify_notebook_unchanged(notebook_file, notebook);
-    fs.renameSync(temporary, file); renamed = true;
+    // Windows renames an existing entry to a case alias; keep the stored spelling.
+    fs.renameSync(temporary, require('./notebook-owner').filesystem_spelling(file)); renamed = true;
     const saved = archive_index(file);
     if (saved.hash !== expected) throw Error('published archive verification failed; live notebook retained');
     return saved;
