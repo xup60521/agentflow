@@ -1,0 +1,41 @@
+{
+  "dispatch": {
+    "stage": "A-003-windows-stream-path-cross-check",
+    "host": "claude",
+    "profile": "claude-default",
+    "family": "claude",
+    "tier": "better",
+    "model": "claude-opus-4-6",
+    "effort": "high",
+    "marker": "A-003-windows-stream-path-review",
+    "launch": "native",
+    "worker_args": []
+  },
+  "status": "completed",
+  "exit_code": 0,
+  "timed_out": false,
+  "clone": {
+    "independent": true,
+    "remotes": [],
+    "changed": false
+  },
+  "nested_worker": {
+    "visible": false,
+    "detected": false,
+    "processes": [],
+    "containment": {
+      "attempted": false,
+      "actions": []
+    }
+  },
+  "acceptance": {
+    "accepted": false,
+    "reason": "Process exit and captured output do not prove coordinator acceptance."
+  },
+  "stdout_bytes": 4397,
+  "stdout_truncated": false,
+  "stderr_excerpt": "",
+  "report_bytes": 4397,
+  "preamble_trimmed_bytes": 0,
+  "report_path": ".agentflow/features/thin-customization/artifacts/A-003-windows-stream-path/cross-check-report.md"
+}

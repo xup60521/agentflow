@@ -1,0 +1,9 @@
+{
+  "changed_files": ["skills/agentflow/scripts/agf.js", "skills/agentflow/scripts/windows.test.js"],
+  "changed_lines": 14,
+  "behavior_change": true,
+  "trust_boundary": false,
+  "broad_change": false,
+  "consequential_change": false,
+  "owner_control": "default"
+}

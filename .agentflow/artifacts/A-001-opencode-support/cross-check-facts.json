@@ -1,0 +1,11 @@
+{
+  "changed_files": [
+    ".agentflow/artifacts/A-001-opencode-support/design.md"
+  ],
+  "changed_lines": 219,
+  "behavior_change": false,
+  "trust_boundary": false,
+  "broad_change": false,
+  "consequential_change": false,
+  "owner_control": "default"
+}
