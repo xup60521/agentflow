@@ -1323,11 +1323,15 @@ const build_args = (context, task, prompt) => {
       context.completion_message_file = completion_file
       context.completion_message_descriptor = completion_descriptor
       context.completion_message_identity = completion_identity
-      context.file_system.unlinkSync(completion_file)
-      const anonymous_identity = context.file_system.fstatSync(completion_descriptor)
-      if (anonymous_identity.nlink !== 0 || !same_file_object(stat_identity(completion_identity), stat_identity(anonymous_identity)))
-        throw new Error('reservation could not be made anonymous')
-      context.completion_message_argument = '/dev/fd/3'
+      if (FINAL_MESSAGE_BY_PATH) {
+        context.completion_message_argument = completion_file
+      } else {
+        context.file_system.unlinkSync(completion_file)
+        const anonymous_identity = context.file_system.fstatSync(completion_descriptor)
+        if (anonymous_identity.nlink !== 0 || !same_file_object(stat_identity(completion_identity), stat_identity(anonymous_identity)))
+          throw new Error('reservation could not be made anonymous')
+        context.completion_message_argument = '/dev/fd/3'
+      }
     } catch (error) {
       if (completion_descriptor !== null) {
         try { context.file_system.closeSync(completion_descriptor) } catch {}
@@ -1343,13 +1347,25 @@ const build_args = (context, task, prompt) => {
   return [...configured_worker_args(context, context.command_args), prompt]
 }
 
+// Windows has no /dev/fd, so Codex writes its final message to the reserved
+// file by path. The file stays inside the protected state directory, the
+// looper reads it through the descriptor it reserved, and removes it after.
+const FINAL_MESSAGE_BY_PATH = process.platform === 'win32'
+const FINAL_MESSAGE_LINKS = FINAL_MESSAGE_BY_PATH ? 1 : 0
+
+const remove_final_message_file = (context, file) => {
+  if (FINAL_MESSAGE_BY_PATH && file) {
+    try { context.file_system.unlinkSync(file) } catch { /* already absent */ }
+  }
+}
+
 const read_completion_message = (context) => {
   const file = context.completion_message_file
   if (!file) return null
   const descriptor = context.completion_message_descriptor
   if (descriptor === null) throw looper_error(`Codex final-message evidence descriptor is missing: ${file}`)
   const descriptor_stat = context.file_system.fstatSync(descriptor)
-  if (!descriptor_stat.isFile() || descriptor_stat.isSymbolicLink() || descriptor_stat.nlink !== 0)
+  if (!descriptor_stat.isFile() || descriptor_stat.isSymbolicLink() || descriptor_stat.nlink !== FINAL_MESSAGE_LINKS)
     throw looper_error(`Codex final-message evidence is not an anonymous regular file: ${file}`)
   if (!context.completion_message_identity ||
     !same_file_object(stat_identity(context.completion_message_identity), stat_identity(descriptor_stat)))
@@ -1366,7 +1382,7 @@ const read_completion_message = (context) => {
       bytes_read += read
     }
     const final_descriptor_stat = context.file_system.fstatSync(descriptor)
-    if (final_descriptor_stat.nlink !== 0 ||
+    if (final_descriptor_stat.nlink !== FINAL_MESSAGE_LINKS ||
       !same_stat_identity(stat_identity(descriptor_stat), stat_identity(final_descriptor_stat)))
       throw new Error(`filesystem identity, link count, or size changed while reading ${file}`)
     text = new TextDecoder('utf-8', { fatal: true }).decode(content)
@@ -1374,6 +1390,7 @@ const read_completion_message = (context) => {
     throw looper_error(`Codex final-message evidence is unreadable: ${error_message(error)}`)
   }
   context.file_system.closeSync(descriptor)
+  remove_final_message_file(context, file)
   context.completion_message_file = null
   context.completion_message_descriptor = null
   context.completion_message_identity = null
@@ -2055,6 +2072,7 @@ const run_looper = async (options = {}) => {
     remove_signal_handlers(context)
     if (context.completion_message_descriptor !== null) {
       try { context.file_system.closeSync(context.completion_message_descriptor) } catch {}
+      remove_final_message_file(context, context.completion_message_file)
       context.completion_message_descriptor = null
     }
   }

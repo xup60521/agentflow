@@ -328,6 +328,12 @@ const remove_temp_dir = (dir) => {
 // `ino + 1` can round back to the same value.
 const other_inode = ino => ino + Math.max(1, 2 ** (Math.floor(Math.log2(ino || 1)) - 51))
 
+// POSIX passes Codex an anonymous descriptor; Windows has no /dev/fd, so it
+// passes the reserved file inside the protected state directory.
+const assert_final_message_argument = argument => process.platform === 'win32'
+  ? assert.match(path.basename(argument), /^\.last-message-plan-\d{3}\.md-[0-9a-f]{32}\.txt$/u)
+  : assert.equal(argument, '/dev/fd/3')
+
 const make_fake_child = (dir) => {
   const file = path.join(dir, 'fake-child.js')
   fs.writeFileSync(file, fake_child_source)
@@ -1031,7 +1037,7 @@ test('a handwritten Codex queue binds completion to the final-message channel in
         const output_index = args.indexOf('--output-last-message')
         assert.equal(executable, 'codex')
         assert.notEqual(output_index, -1)
-        assert.equal(args[output_index + 1], '/dev/fd/3')
+        assert_final_message_argument(args[output_index + 1])
         fs.ftruncateSync(options.stdio[3], 0)
         fs.writeSync(options.stdio[3], `${completion_line}\n`, 0, 'utf8')
         return spawn(process.execPath, [fake_child, JSON.stringify({
@@ -1069,7 +1075,7 @@ test('a generated Codex queue binds completion to the final-message channel inst
         const output_index = args.indexOf('--output-last-message')
         assert.equal(executable, 'codex')
         assert.notEqual(output_index, -1)
-        assert.equal(args[output_index + 1], '/dev/fd/3')
+        assert_final_message_argument(args[output_index + 1])
         fs.ftruncateSync(options.stdio[3], 0)
         fs.writeSync(options.stdio[3], 'records/work.devlog.md updated\n', 0, 'utf8')
         return spawn(process.execPath, [fake_child, JSON.stringify({
@@ -1121,7 +1127,7 @@ test('a generated Codex queue rejects invalid anonymous final-message bytes', as
           executable_available: command => command === 'codex',
           spawn: (_executable, args, options) => {
             const output = args[args.indexOf('--output-last-message') + 1]
-            assert.equal(output, '/dev/fd/3')
+            assert_final_message_argument(output)
             output_descriptor = options.stdio[3]
             fs.ftruncateSync(output_descriptor, 0)
             if (scenario === 'oversize') {
@@ -2884,7 +2890,8 @@ test('the default child boundary is injected, ephemeral, shell-free, and fresh p
       const task = `plan-${String(index + 1).padStart(3, '0')}.md`
       const prompt = `Execute the frozen plan directly: ${path.relative(dir, path.join(queue, task))}\n\nYou are the plan worker already launched by agf-looper. Execute the named plan directly and complete the product work yourself. Do not invoke agf-looper or start another plan worker. Do not invoke Agentflow, codex, claude, another model CLI, a subagent, a delegate, or an independent review process. Complete the Agentflow notebook record for this plan. A completed round must contain its exact \`# ← Reply / A-NNN\` heading and must end with the next sequential scaffold in exactly this form, including the bare plus line: \`# → Ask / A-NNN\n\n+\`. Do not treat a summary, final report, commit, or bare completion signal as a completed notebook round without the Reply heading and that full next-Ask scaffold. When the plan and its record are safely complete, your entire final response must be exactly: ${completion_line}`
       assert.equal(call.executable, 'codex')
-      assert.deepEqual(call.args, ['exec', '--sandbox', 'workspace-write', '--ephemeral', '-m', 'fixture', '-c', 'model_reasoning_effort=low', '--output-last-message', '/dev/fd/3', prompt])
+      assert_final_message_argument(call.args[9])
+      assert.deepEqual(call.args, ['exec', '--sandbox', 'workspace-write', '--ephemeral', '-m', 'fixture', '-c', 'model_reasoning_effort=low', '--output-last-message', call.args[9], prompt])
       assert.equal(call.options.shell, false)
       assert.equal(call.options.cwd, fs.realpathSync(dir))
     }
