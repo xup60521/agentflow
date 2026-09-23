@@ -2112,7 +2112,7 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 	// --git-common-dir is the MAIN checkout's .git, from a worktree as well as from the main folder.
 	const common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
 	if (!common.ok) { log(`cannot locate the main checkout:\n${common.out}`); return 1 }
-	const repo = path.dirname(common.out)
+	const repo = path.dirname(real_path(common.out))
 
 	const key = args.key || key_from_path(cwd)
 	if (!key) { log('no feature name given, and you are not standing in a .worktrees/<name> folder\n\n' + render_usage(width)); return 1 }
@@ -2379,7 +2379,7 @@ const ditch_main = (argv, cwd, log, ask = ask_tty, width = 80) => {
 	if (!top.ok) { log('not a git repository — run agf inside your project'); return 1 }
 	const common = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
 	if (!common.ok) { log(`cannot locate the main checkout:\n${common.out}`); return 1 }
-	const repo = path.dirname(common.out)
+	const repo = path.dirname(real_path(common.out))
 
 	// Never inferred from the folder — for a delete, you type exactly what goes.
 	const key = args.key
