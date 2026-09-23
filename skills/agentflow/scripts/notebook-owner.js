@@ -292,4 +292,4 @@ const cli = (argv, cwd) => {
   try { return { json: transfer(options) }; } finally { writer().release_close_round_lock(lock); }
 };
 
-module.exports = { identity, location, read, guard, verify, release, relocate, inspect, transfer, cli, safe_path, linked_worktree };
+module.exports = { identity, location, read, guard, verify, release, relocate, inspect, transfer, cli, safe_path, linked_worktree, filesystem_spelling };
