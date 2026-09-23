@@ -37,7 +37,7 @@ const USAGE_COMMANDS = [
 	{ label: 'start', syntax: 'agf start --repo <path> --host <id> [--session <id>] [--host-family <family>] --message-stdin [--json]', description: 'initialize, record the owner message, and return one bounded intake result' },
 	{ label: 'owner', syntax: 'agf owner <inspect|adopt> --notebook <path>', description: 'inspect ownership or explicitly adopt with expected owner, Ask and hash' },
 	{ label: 'close', syntax: 'agf close --manifest-stdin [--push-authorized]', description: 'validate, replace, commit, and optionally push one prepared closeout manifest' },
-	{ label: 'compact', syntax: 'agf compact --notebook <path> [--host <id>] [--session <id>]', description: 'archive completed notebook rounds with byte and hash verification' },
+	{ label: 'compact', syntax: 'agf compact --notebook <path> [--host <id>] [--session <id>] [--include-answered true]', description: 'archive completed notebook rounds with byte and hash verification; explicit override includes answered rounds' },
 	{ label: 'init', syntax: 'agf init', description: 'create Agentflow records, ignore entries, and project hooks in one repeatable action' },
 	{ label: 'new', syntax: 'agf new <name> [taskkey] [-m "first ask"]', description: 'open a stream and write its initial notebook; root records stay with the agent' },
 	{ label: 'finish', syntax: 'agf finish --prep [taskkey]', description: 'prepare a worktree by pushing its branch and integrating the default branch' },
@@ -967,7 +967,7 @@ const active_host_for_cli = (repo) => {
 const stream_doc = (repo, key) => {
 	const features = workspace_features(repo)
 	const candidates = [
-		path.join(features, key, `${key}.devlog.md`),
+		path.posix.join(features, key, `${key}.devlog.md`),
 	]
 	return candidates.find((rel) => fs.existsSync(path.join(repo, rel))) || ''
 }
@@ -2152,19 +2152,15 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 		return 1
 	}
 
-	// Guard 4 — an unsaved worktree is never swept.
-	if (fs.existsSync(wt)) {
-		const dirty = git(wt, ['status', '--porcelain', '--ignored', '--untracked-files=all'])
-		if (!dirty.ok) {
-			log(`could not inspect ${wt_rel} before cleanup — nothing was changed`)
-			return 1
-		}
-		if (dirty.out !== '') {
-			log(`${wt_rel} still has unsaved changes — nothing was changed`)
-			log(dirty.out.split('\n').map((l) => `  ${l}`).join('\n'))
-			log('save them (or throw them away) in that folder first, then run agf cleanup again')
-			return 1
-		}
+	// Guard 4 — only recognized local files may accompany a clean worktree.
+	const local_files = require('./stream-cleanup')
+	const cleanup_context = { worktree: wt, notebook: stream_doc(wt, key), key, git }
+	const local_before = fs.existsSync(wt) ? local_files.inspect(cleanup_context) : { files: [] }
+	if (local_before.error) {
+		log(`${wt_rel} still has unsaved changes — nothing was changed`)
+		log(local_before.error)
+		log('save or preserve the reported files first, then run agf cleanup again')
+		return 1
 	}
 
 	const destination = deletion_remote(repo)
@@ -2309,12 +2305,20 @@ const clean_main = (argv, cwd, log, ask, width = 80) => {
 		return 1
 	}
 	if (fs.existsSync(wt)) {
-		// Git removes ignored files even without --force; check again after merge/push.
-		const unsaved = git(wt, ['status', '--porcelain', '--ignored', '--untracked-files=all'])
-		if (!unsaved.ok || unsaved.out !== '') {
-			log(`${wt_rel} has unsaved or ignored files, or could not be inspected — nothing was swept`)
+		// Git removes ignored files even without --force. Recheck and preserve them first.
+		if (!local_files.unchanged(local_before, local_files.inspect(cleanup_context))) {
+			log(`${wt_rel} has unsaved or ignored files that changed, or could not be inspected — nothing was swept`)
 			return 1
 		}
+		let recovery
+		try { recovery = local_files.preserve({ common: common.out, key, files: local_before.files }) }
+		catch (error) { log(error.message); return 1 }
+		if (recovery) log(`preserved local files: ${recovery}`)
+		if (!local_files.unchanged(local_before, local_files.inspect(cleanup_context))) {
+			log('worktree local files changed during preservation — nothing was swept; recovery copy retained')
+			return 1
+		}
+
 		const removed = git(repo, ['worktree', 'remove', wt_rel])
 		if (!removed.ok) {
 			log(removed.timed_out

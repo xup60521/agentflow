@@ -282,6 +282,24 @@ test('real terminal helper supplies a clean TTY, fixed width, input, output, and
   assert.match(result.output, /"codex":null/)
 })
 
+test('Claude Code native session starts and writes a notebook through a real terminal', { skip: !terminal_available }, t => {
+  const repo = fs.realpathSync(make_temp_directory('agentflow-terminal-claude-session-'))
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }))
+  const command = `test -t 0 && test -t 1 && test -t 2 || exit 9
+print 'terminal identity: stdin/stdout/stderr are TTYs'
+node "$1" start --repo "$2" --host claude --message-stdin --json <<'CLAUDE_INPUT'
+Record the native Claude session.
+CLAUDE_INPUT`
+  const started = terminal('/bin/zsh', ['-c', command, 'claude-journey', agf, repo], { cwd: repo, env: { CLAUDE_CODE_SESSION_ID: 'claude-terminal-session' } })
+  assert.equal(started.status, 0, started.output)
+  assert.match(started.output, /terminal identity: stdin\/stdout\/stderr are TTYs/)
+  assert.match(started.output, /"active_host": "claude"/)
+  assert.match(fs.readFileSync(path.join(repo, '.agentflow/devlog.md'), 'utf8'), /Record the native Claude session\./)
+  const recorded = require('./notebook-owner').inspect({ root: repo, notebook: '.agentflow/devlog.md' })
+  assert.equal(recorded.owner.host, 'claude')
+  assert.equal(recorded.owner.session, 'claude-terminal-session')
+})
+
 
 test('real terminal journey reports the machine-local numeric offset', { skip: !terminal_available }, () => {
   const local_time = path.join(__dirname, 'local-time.js')
@@ -752,4 +770,74 @@ test('configured custom default works through a real terminal stream journey', {
   assert.equal(fs.existsSync(worktree), false)
   assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']).trim(), 'trunk')
   assert.equal(git(repo, ['rev-parse', 'main']), before_main)
+})
+
+test('cleanup preserves closed stream completion records through a real PTY', { skip: !terminal_available }, (t) => {
+  const repo = make_repo()
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }))
+  fs.appendFileSync(path.join(repo, '.gitignore'), '.codex/\n.claude/\n.DS_Store\n')
+  git(repo, ['add', '.gitignore']); git(repo, ['commit', '-m', 'ignore local files'])
+  const key = 'cleanup-records'
+  assert.equal(terminal(process.execPath, [agf, 'new', key], { cwd: repo }).status, 0)
+  const worktree = path.join(repo, '.worktrees', key)
+  const notebook = `.agentflow/features/${key}/${key}.devlog.md`
+  const session = 'cleanup-terminal-fixture'
+  const start = spawnSync(process.execPath, [agf, 'start', '--repo', worktree, '--host', 'codex', '--session', session, '--message-stdin', '--json'], { cwd: worktree, input: 'Explain cleanup, fast-lane\n', encoding: 'utf8', env: clean_terminal_env() })
+  assert.equal(start.status, 0, start.stderr)
+  const manifest = {
+    version: 1, notebook, ask: 'A-001', run_events: [],
+    reply: '## [SUMMARY]\n\n- Completed.\n\n## [FINAL REPORT]\n\n1. Verified the disposable fixture.\n\n```completion-metadata\nHost review: PASS — inspected this disposable fixture.\n```\n',
+    status: { project: 'terminal test', notebook, notebook_kind: 'stream', current_commit: 'tested', tests_scenarios: 'PTY cleanup', config_path: `.agentflow/features/${key}/ag.json`, host: 'codex', validation: 'validated', proven: 'completion', open: 'none', next: 'cleanup', artifacts: 'none', archived_eras: 'none', streams: [] },
+    allowed_paths: [notebook], commit_message: 'record terminal completion', delivery: { mode: 'local' }
+  }
+  const closed = spawnSync(process.execPath, [agf, 'close', '--host', 'codex', '--session', session, '--manifest-stdin'], { cwd: worktree, input: JSON.stringify(manifest), encoding: 'utf8', env: clean_terminal_env() })
+  assert.equal(closed.status, 0, `${closed.stdout}\n${closed.stderr}`)
+  const record = require('./completion-record').location({ project_root: worktree, notebook_path: notebook, ask: 'A-001' })
+  const bytes = fs.readFileSync(record.file), reference = fs.readFileSync(record.reference_file)
+  fs.writeFileSync(path.join(worktree, '.DS_Store'), 'finder fixture')
+  const wrapper = 'if (![process.stdin,process.stdout,process.stderr].every(s=>s.isTTY)) process.exit(3); console.error("terminal identity: stdin/stdout/stderr are TTYs"); const r=require("node:child_process").spawnSync(process.execPath,[process.argv[1],"cleanup",process.argv[2]],{stdio:"inherit"}); process.exit(r.status ?? 1)'
+  const result = terminal(process.execPath, ['-e', wrapper, agf, key], { cwd: repo })
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /terminal identity: stdin\/stdout\/stderr are TTYs/)
+  const backup = /preserved local files: ([^\n]+)/.exec(result.output)?.[1]
+  assert.ok(backup, result.output)
+  assert.deepEqual(fs.readFileSync(path.join(backup, record.relative)), bytes)
+  assert.deepEqual(fs.readFileSync(path.join(backup, record.reference_relative)), reference)
+  assert.equal(fs.existsSync(worktree), false)
+  assert.equal(git(repo, ['branch', '--list', key]).trim(), '')
+  assert.ok(fs.existsSync(path.join(repo, notebook)))
+})
+
+test('explicit answered-round compaction preserves history through a real PTY', { skip: !terminal_available }, () => {
+  const repo = make_repo()
+  const notebook = 'devlog.md'
+  const file = path.join(repo, notebook)
+  const history = '# → Ask / A-001\n\n+ old request\n\n# ← Reply / A-001\n\nFinished.\n\n## Questions\n\n- ans: preserve this answer\n\n---\n\n'
+  const current = '# → Ask / A-002\n\n+ current request\n'
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/# → Ask \/ A-001[\s\S]*$/u, history + current))
+  const owner = require('./notebook-owner')
+  const writer = require('./notebook-write')
+  const session = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID || 'compaction-terminal-fixture'
+  const lock = writer.acquire_close_round_lock(file + '.close-round.lock')
+  try {
+    const info = owner.inspect({ root: repo, notebook })
+    owner.transfer({ root: repo, notebook, host: 'codex', session, ask: info.ask, expected: 'unowned', sha256: info.sha256 })
+  } finally { writer.release_close_round_lock(lock) }
+  const args = [agf, 'compact', '--notebook', notebook, '--host', 'codex', '--session', session]
+  const before = fs.readFileSync(file)
+  const ordinary = terminal(process.execPath, args, { cwd: repo })
+  assert.equal(ordinary.status, 0, ordinary.output)
+  assert.match(ordinary.output, /answered-round-retained/)
+  assert.deepEqual(fs.readFileSync(file), before)
+  const invalid = terminal(process.execPath, [...args, '--include-answered', 'false'], { cwd: repo })
+  assert.notEqual(invalid.status, 0, invalid.output)
+  assert.match(invalid.output, /accepts only true/)
+  assert.deepEqual(fs.readFileSync(file), before)
+  const wrapper = 'if (![process.stdin,process.stdout,process.stderr].every(s=>s.isTTY)) process.exit(3); console.error("terminal identity: stdin/stdout/stderr are TTYs"); const r=require("node:child_process").spawnSync(process.execPath,process.argv.slice(1),{stdio:"inherit"}); process.exit(r.status ?? 1)'
+  const result = terminal(process.execPath, ['-e', wrapper, ...args, '--include-answered', 'true'], { cwd: repo })
+  assert.equal(result.status, 0, result.output)
+  assert.match(result.output, /terminal identity: stdin\/stdout\/stderr are TTYs/)
+  assert.match(result.output, /A-001/)
+  assert.deepEqual(fs.readFileSync(path.join(repo, 'devlog.archive.md')), Buffer.from(history))
+  assert.ok(fs.readFileSync(file, 'utf8').endsWith(current))
 })

@@ -2756,7 +2756,17 @@ test('stream_doc accepts only the canonical notebook name', () => {
 	fs.writeFileSync(path.join(dir, '.agentflow/features', 'new', 'new.devlog.md'), 'x')
 	fs.mkdirSync(path.join(dir, '.agentflow/features', 'old'), { recursive: true })
 	fs.writeFileSync(path.join(dir, '.agentflow/features', 'old', 'devlog.md'), 'x')
-	assert.equal(agf.stream_doc(dir, 'new'), path.join('.agentflow/features', 'new', 'new.devlog.md'))
+	assert.equal(agf.stream_doc(dir, 'new'), '.agentflow/features/new/new.devlog.md')
+	const native_join = path.join
+	// Exercise Windows relative-path generation on every platform without changing filesystem access.
+	const simulated_path = { ...path, join: (...parts) => parts[0] === '.agentflow/features' ? path.win32.join(...parts) : native_join(...parts) }
+	const loaded = { exports: {} }
+	const filename = require.resolve('./agf')
+	const wrapper = require('node:vm').runInThisContext(require('node:module').wrap(fs.readFileSync(filename, 'utf8').replace(/^#![^\n]*/, '')), { filename })
+	wrapper(loaded.exports, name => name === 'node:path' ? simulated_path : require(name), loaded, filename, __dirname)
+	const relative = loaded.exports.stream_doc(dir, 'new')
+	assert.equal(relative, '.agentflow/features/new/new.devlog.md')
+	assert.equal(require('./notebook-owner').safe_path(dir, relative), native_join(dir, '.agentflow/features/new/new.devlog.md'))
 	assert.equal(agf.stream_doc(dir, 'old'), '')
 	assert.equal(agf.stream_doc(dir, 'missing'), '')
 	drop(dir)
@@ -3135,4 +3145,65 @@ test('invalid configured default stops stream operations before changing branch 
       assert.equal(fs.existsSync(wt), true)
     }
   } finally { drop(dir) }
+})
+
+test('cleanup preserves known local records outside the worktree without force', () => {
+	const { dir, run } = make_repo()
+	try {
+		agf.update_ignore_file(dir)
+		fs.appendFileSync(path.join(dir, '.gitignore'), '.DS_Store\n')
+		run(['add', '.gitignore']); run(['commit', '-m', 'ignore local files'])
+		const wt = open_stream(dir, 'preserved records')
+		install_hook.install({ cwd: wt, hosts: ['codex'], quiet: true })
+		const tmp = path.join(wt, '.agentflow/.tmp')
+		fs.mkdirSync(tmp, { recursive: true }); fs.writeFileSync(path.join(tmp, '.gitignore'), '*\n')
+		fs.writeFileSync(path.join(wt, '.DS_Store'), 'finder metadata')
+		const notebook = '.agentflow/features/preserved-records/preserved-records.devlog.md'
+		const receipt = path.join(tmp, `agentflow-input-codex-${require('node:crypto').createHash('sha256').update(notebook).digest('hex')}.json`)
+		fs.writeFileSync(receipt, '{"ask":"A-001","entries":{}}\n')
+		const before = fs.readFileSync(receipt)
+		const logs = []
+		const result = agf.main(['cleanup', 'preserved-records'], dir, message => logs.push(message))
+		assert.equal(result.dir, dir, logs.join('\n'))
+		assert.ok(!fs.existsSync(wt))
+		const backup = logs.find(line => line.startsWith('preserved local files: ')).slice('preserved local files: '.length)
+		assert.deepEqual(fs.readFileSync(path.join(backup, path.relative(wt, receipt))), before)
+		assert.equal(fs.readFileSync(path.join(backup, '.DS_Store'), 'utf8'), 'finder metadata')
+	} finally { drop(dir) }
+})
+
+for (const kind of ['unknown', 'symlink', 'foreign-hooks', 'active-owner', 'notebook-lock', 'backup-collision', 'backup-symlink', 'changed-after-copy']) test(`cleanup keeps local files on ${kind}`, () => {
+	const { dir, run } = make_repo()
+	try {
+		agf.update_ignore_file(dir)
+		fs.appendFileSync(path.join(dir, '.gitignore'), '.DS_Store\n')
+		run(['add', '.gitignore']); run(['commit', '-m', 'ignore local files'])
+		const wt = open_stream(dir, 'guarded records')
+		const finder = path.join(wt, '.DS_Store')
+		fs.writeFileSync(finder, 'original')
+		const notebook = '.agentflow/features/guarded-records/guarded-records.devlog.md'
+		const tmp = path.join(wt, '.agentflow/.tmp')
+		fs.mkdirSync(tmp, { recursive: true }); fs.writeFileSync(path.join(tmp, '.gitignore'), '*\n')
+		if (kind === 'unknown') fs.writeFileSync(path.join(tmp, 'private.json'), 'private work')
+		if (kind === 'symlink') { fs.renameSync(finder, path.join(dir, 'finder-original')); fs.symlinkSync(path.join(dir, 'finder-original'), finder) }
+		if (kind === 'foreign-hooks') {
+			install_hook.install({ cwd: wt, hosts: ['codex'], quiet: true })
+			const file = path.join(wt, '.codex/hooks.json'), config = JSON.parse(fs.readFileSync(file))
+			config.private_setting = 'preserve me'; fs.writeFileSync(file, JSON.stringify(config))
+		}
+		if (kind === 'active-owner') require('./notebook-owner').guard({ root: wt, notebook, host: 'codex' })
+		if (kind === 'notebook-lock') fs.writeFileSync(path.join(wt, `${notebook}.close-round.lock`), 'busy')
+		if (kind === 'backup-symlink') fs.symlinkSync(tmp, path.join(dir, '.git/agentflow-cleanup'))
+		if (kind === 'backup-collision') fs.writeFileSync(path.join(dir, '.git/agentflow-cleanup'), 'do not overwrite')
+		const logs = []
+		const result = agf.main(['cleanup', 'guarded-records'], dir, message => {
+			logs.push(message)
+			if (kind === 'changed-after-copy' && message.startsWith('preserved local files: ')) fs.writeFileSync(finder, 'new work')
+		})
+		assert.equal(result, 1, logs.join('\n'))
+		assert.ok(fs.existsSync(wt))
+		assert.ok(run(['branch', '--list', 'guarded-records']).trim())
+		assert.equal(fs.readFileSync(finder, 'utf8'), kind === 'changed-after-copy' ? 'new work' : 'original')
+		if (kind === 'backup-collision') assert.equal(fs.readFileSync(path.join(dir, '.git/agentflow-cleanup'), 'utf8'), 'do not overwrite')
+	} finally { drop(dir) }
 })

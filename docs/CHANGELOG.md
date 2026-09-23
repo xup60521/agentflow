@@ -1,8 +1,32 @@
 # Changelog
 
-Notable Agentflow changes, with the newest version first. Release metadata uses major.minor.patch; v8.3 is version 8.3.0. Earlier dates identify recorded source milestones, not independently verified public publication dates.
+Notable Agentflow changes, with the newest version first. Release metadata uses major.minor.patch; the current release is 8.3.3. Earlier dates identify recorded source milestones, not independently verified public publication dates.
 
-## [Unreleased]
+## [8.3.3]
+
+### Fixed
+
+- Recognize Claude Code's `CLAUDE_CODE_SESSION_ID` for notebook ownership, host detection, reply identity and worker environment filtering, while retaining legacy compatibility and rejecting conflicting session IDs.
+
+- Keep stream notebook paths in forward-slash form on Windows so startup and hooks can pass the canonical-path ownership check.
+
+### Changed
+
+- Release corrections must inspect the fetched public version and files before editing, preventing stale private checkouts from replacing newer published content.
+
+## [8.3.2]
+
+### Added
+
+- Manual notebook compaction accepts `--include-answered true` to archive completed rounds containing filled-in answers while preserving their exact bytes. Automatic compaction still retains answered rounds, and the current open round remains live.
+
+## [8.3.1]
+
+### Fixed
+
+- Explicit first activation can claim a newly created stream after its first Ask is filled, using the committed empty notebook as proof while preserving session ownership protections.
+
+- Stream cleanup preserves recognized Agentflow local records, hook files and Finder metadata in private recovery storage before removing the worktree. Unknown files, active ownership and changes during cleanup still stop removal.
 
 ## [8.3.0]
 
