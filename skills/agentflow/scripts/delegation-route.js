@@ -2,6 +2,7 @@
 
 const settings = require('./ag-settings.js')
 const external_runner = require('./external-runner.js')
+const { executable_name } = require('./executable-launch.js')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -112,7 +113,7 @@ const launch_threeways_debate = async (facts, dependencies = {}) => {
 		const disabled = new Set(selection.disabled_profile_ids || [])
 		for (const profile of facts.config?.['external-workers'] || []) {
 			const command = profile.command || []
-			if (!((path.basename(command[0] || '') === 'codex' && command.includes('exec')) || (path.basename(command[0] || '') === 'claude' && command.includes('-p')))) disabled.add(profile.id)
+			if (!((executable_name(command[0] || '') === 'codex' && command.includes('exec')) || (executable_name(command[0] || '') === 'claude' && command.includes('-p')))) disabled.add(profile.id)
 		}
 		return settings.resolve_threeways_worker(facts.config, { ...selection, disabled_profile_ids: disabled })
 	})
@@ -139,7 +140,7 @@ const launch_threeways_debate = async (facts, dependencies = {}) => {
 		const worker_model = worker.model && worker.effort ? `${worker.model}/${worker.effort}` : undefined
 		const external = {
 			candidate_id: worker.profile?.id || worker.id || 'threeways-worker', id: worker.profile?.id || worker.id || 'threeways-worker',
-			priority: 100, available: true, recipe_checked: worker.recipe_checked === true || (path.basename(worker.executable) === 'codex' && worker.args.includes('exec')) || (path.basename(worker.executable) === 'claude' && worker.args.includes('-p')), family: worker.profile?.family || settings.family_for_host(worker.executable),
+			priority: 100, available: true, recipe_checked: worker.recipe_checked === true || (executable_name(worker.executable) === 'codex' && worker.args.includes('exec')) || (executable_name(worker.executable) === 'claude' && worker.args.includes('-p')), family: worker.profile?.family || settings.family_for_host(worker.executable),
 			command: [worker.executable, ...worker.args], ...(worker_model ? { model_effort: worker_model } : {}),
 			...(worker.profile?.tiers ? { tiers: worker.profile.tiers } : {}),
 		}

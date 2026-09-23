@@ -9,11 +9,15 @@ const node_test = require('node:test')
 
 const runner = require('./external-runner.js')
 
+// Windows runs only files with an executable extension.
+const EXE = process.platform === 'win32' ? '.exe' : ''
+const no_process_table = { skip: process.platform === 'win32' ? 'Windows has no process table to scan for nested workers' : false }
+
 node_test.test('external runner has no elapsed-time deadline by default', () => {
   node_assert.equal(runner.DEFAULT_TIMEOUT_MS, 0)
 })
 
-node_test.test('external runner exposes a recoverable nested-worker violation without rejecting clone changes', async () => {
+node_test.test('external runner exposes a recoverable nested-worker violation without rejecting clone changes', no_process_table, async () => {
   const source = make_source_repo()
   const disposable = make_temp_dir('agentflow-external-runner-nested-')
   const nested_executable = node_path.join(disposable, 'codex')
@@ -39,7 +43,7 @@ node_test.test('external runner exposes a recoverable nested-worker violation wi
 
 const fixture_path = node_path.join(__dirname, 'fixtures', 'external-worker.js')
 
-node_test.test('default polling bounds process-table work and still contains a nested worker', async () => {
+node_test.test('default polling bounds process-table work and still contains a nested worker', no_process_table, async () => {
   const source = make_source_repo()
   const disposable = make_temp_dir('agentflow-external-runner-default-poll-')
   const nested_executable = node_path.join(disposable, 'codex')
@@ -143,7 +147,7 @@ node_test.test('external runner removes only opposite-host markers for provider 
   for (const provider of ['claude', 'codex']) {
     const source = make_source_repo()
     const disposable = make_temp_dir(`agentflow-external-runner-${provider}-environment-`)
-    const executable = node_path.join(disposable, provider)
+    const executable = node_path.join(disposable, provider + EXE)
     node_fs.symlinkSync(process.execPath, executable)
     try {
       const result = await runner.run_external_command(make_run_options(source, disposable, 'environment', {
@@ -202,7 +206,7 @@ node_test.test('external runner reads a bounded declared result file inside the 
 node_test.test('external runner rejects a same-path separated Codex output option before child start', async () => {
   const source = make_source_repo()
   const disposable = make_temp_dir('agentflow-external-runner-codex-collision-')
-  const codex_path = node_path.join(disposable, 'codex')
+  const codex_path = node_path.join(disposable, 'codex' + EXE)
   node_fs.symlinkSync(process.execPath, codex_path)
   try {
     for (const option of ['-o', '--output-last-message']) {
@@ -236,7 +240,7 @@ node_test.test('external runner leaves non-Codex, different-path, equals-form, a
     const source = make_source_repo()
     const disposable = make_temp_dir(`agentflow-external-runner-codex-allow-${test_case.name}-`)
     const executable = test_case.executable === 'codex'
-      ? node_path.join(disposable, 'codex')
+      ? node_path.join(disposable, 'codex' + EXE)
       : test_case.executable
     if (test_case.executable === 'codex') node_fs.symlinkSync(process.execPath, executable)
     const original_args = [fixture_path, 'result-file', ...test_case.args]

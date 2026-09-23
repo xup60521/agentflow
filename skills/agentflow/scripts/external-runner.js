@@ -6,7 +6,7 @@ const node_fs = require('node:fs')
 const node_os = require('node:os')
 const node_path = require('node:path')
 const { contain_nested_processes, find_nested_processes, read_process_table, send_tree_signal } = require('./process-tree.js')
-const { launch_command } = require('./executable-launch.js')
+const { executable_name, launch_command } = require('./executable-launch.js')
 
 const MAX_OUTPUT_BYTES = 4096
 const DEFAULT_TIMEOUT_MS = 0
@@ -289,7 +289,7 @@ const host_markers = Object.freeze({
 
 const worker_environment = (command, requested_env) => {
   const environment = { ...(requested_env || process.env) }
-  const executable = node_path.basename(command.executable)
+  const executable = executable_name(command.executable)
   const opposite = executable === 'claude' ? 'codex' : executable === 'codex' ? 'claude' : null
   if (opposite !== null) for (const marker of host_markers[opposite]) delete environment[marker]
   return environment
@@ -537,7 +537,7 @@ const normalize_result_file = (result_file, clone_root) => {
 }
 
 const declared_result_output_collision = (command, clone_root, result_file_path) => {
-  if (!result_file_path || node_path.basename(command.executable) !== 'codex') return null
+  if (!result_file_path || executable_name(command.executable) !== 'codex') return null
   for (let index = 0; index < command.args.length - 1; index += 1) {
     const option = command.args[index]
     if (option !== '-o' && option !== '--output-last-message') continue

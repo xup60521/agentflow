@@ -67,6 +67,13 @@ const resolve_launch = (command, options = {}) => {
   return null
 }
 
+// Windows names a program by its file, extension included; compare the name
+// the owner configured (codex, claude) rather than codex.exe or claude.cmd.
+const executable_name = executable => {
+  const name = node_path.basename(String(executable))
+  return process.platform === 'win32' ? name.replace(/\.(?:exe|cmd|com)$/iu, '') : name
+}
+
 const is_bare_name = executable => typeof executable === 'string' && executable.length > 0 && !/[\\/]/u.test(executable) && !node_path.isAbsolute(executable)
 
 const launch_command = (executable, args, options = {}) => {
@@ -76,6 +83,7 @@ const launch_command = (executable, args, options = {}) => {
 }
 
 module.exports = {
+  executable_name,
   resolve_launch,
   launch_command,
 }
