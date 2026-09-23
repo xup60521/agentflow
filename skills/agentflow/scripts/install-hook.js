@@ -283,7 +283,11 @@ const nudge_setup = () => {
   const marker = node_path.join(__dirname, '..', '.setup-checked');
   if (!node_fs.existsSync(marker)) {
     const setup_script = node_path.join(__dirname, 'setup.js');
-    process.stderr.write(`agentflow: shell shortcuts (agf) not set up yet — run: ${JSON.stringify(process.execPath)} ${JSON.stringify(setup_script)}\n`);
+    // PowerShell runs a quoted program path only through the call operator.
+    const command = process.platform === 'win32'
+      ? `& ${[process.execPath, setup_script].map(value => `'${value.replaceAll("'", "''")}'`).join(' ')} --profile $PROFILE`
+      : `${JSON.stringify(process.execPath)} ${JSON.stringify(setup_script)}`;
+    process.stderr.write(`agentflow: shell shortcuts (agf) not set up yet — run: ${command}\n`);
   }
 };
 
