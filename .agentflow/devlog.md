@@ -108,4 +108,29 @@ Streams: none.
 
 # → Ask / A-003 (xup60521)
 
-+
++ godev
+  `Design Go: 525ff21`
+
++ continue
+
+## [WIP-001] Checkpoint — 2026-09-21 16:05:51 +0800 (A-003)
+
+- **Finished:** 已完成 T-4：schema v8 結構化 model/effort、OpenCode host identity、literal worker dispatch 與 focused tests（commit `413cb7d`）。
+
+- **Running now:** T-5 OpenCode skill/plugin setup、prompt capture、session idle closeout 與 ownership-safe uninstall。
+
+- **Still to do:** T-5 lifecycle tests；T-6 文件與 release contract 更新、回歸測試、real PTY/provider journey、獨立 review 與 Result Go。
+
+- **Next work action:** 為 `.opencode/skills/agentflow/` 與 `.opencode/plugins/` 的安裝／解除安裝先寫 failing tests。
+
+- [x] tracker.md | [x] devlog RUN | [x] scope matches tracker
+
+---
+
+## [RUN-001] Event — 2026-09-23 15:08:30 +0800 (A-003)
+
+- 依擁有者決定停止 A-001：upstream 8.3 已刪除 `dispatch-review.js`，而 `migration/upstream-8.3-overlay`（`Result Go: 1b785e9`）已有審查過的 OpenCode 支援。未完成的 T-5 工作保存於 `archive/a001-opencode-8.2`（`80de2e2`），T-6 不再進行。
+
+- 清理：移除 `thin-customization` stream 與五個已被涵蓋的 `pr-*` worktree，刪除 `windows-remote-v8.2` 與 fork 上的 `pre-v8.2-main`；PowerShell UTF-8 修正送成 fork PR #1。
+
+- 下一步：以乾淨環境比較 8.2 `main` 與 8.3 overlay 在 Windows 上的測試結果，並規劃把 overlay 改為 fork 的 main line（需擁有者核准）。
