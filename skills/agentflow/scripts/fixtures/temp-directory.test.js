@@ -12,7 +12,7 @@ test('temporary fixtures stay under home/tmp and refuse a symlink or file there'
   assert.equal(path.dirname(root), path.join(fs.realpathSync(os.homedir()), 'tmp'))
   const fresh = make_temp_directory('fresh-', root)
   assert.equal(path.dirname(fresh), path.join(root, 'tmp'))
-  assert.equal(fs.statSync(fresh).mode & 0o077, 0)
+  if (process.platform !== 'win32') assert.equal(fs.statSync(fresh).mode & 0o077, 0)
   for (const kind of ['symlink', 'file']) {
     const home = make_temp_directory(`${kind}-`, root)
     const outside = make_temp_directory('outside-', root)
