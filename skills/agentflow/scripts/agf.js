@@ -563,6 +563,10 @@ const repository_identity = repo => {
 
 const close_head_identity = repository_identity
 
+// core.autocrlf may store a CRLF notebook as LF (or keep CRLF); only CRLF pairs are folded, never a lone CR.
+const crlf_to_lf = bytes => Buffer.from(bytes.toString('latin1').replace(/\r\n/gu, '\n'), 'latin1')
+const same_notebook_blob = (blob, expected) => blob.equals(expected) || crlf_to_lf(blob).equals(crlf_to_lf(expected))
+
 const close_find_commit = (repo, close_id, notebook, expected_bytes) => {
 	const history = git(repo, ['log', '--all', '--fixed-strings', `--grep=Agentflow-Close-Id: ${close_id}`, '--format=%H%x00%B%x00'], { preserve_nul: true })
 	if (!history.ok) {
@@ -579,7 +583,7 @@ const close_find_commit = (repo, close_id, notebook, expected_bytes) => {
 		const trailer = message.match(new RegExp(`^Agentflow-Close-Id: ${close_id}$`, 'gmu'))
 		if (trailer === null || trailer.length !== 1) continue
 		const blob = git_blob(repo, ['show', `${sha}:${notebook}`])
-		if (blob.ok && Buffer.isBuffer(blob.out) && (expected_bytes === undefined || blob.out.equals(expected_bytes))) matches.push(sha)
+		if (blob.ok && Buffer.isBuffer(blob.out) && (expected_bytes === undefined || same_notebook_blob(blob.out, expected_bytes))) matches.push(sha)
 	}
 	if (matches.length > 1) return { error: 'more than one matching Agentflow-Close-Id commit was found' }
 	return { sha: matches[0] || null }
