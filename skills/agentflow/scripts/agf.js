@@ -403,7 +403,7 @@ const read_close_stdin = () => {
 	}
 	const content = Buffer.concat(chunks, total)
 	if (!Buffer.from(content.toString('utf8'), 'utf8').equals(content)) throw new Error('close manifest standard input is not valid UTF-8')
-	return content.toString('utf8')
+	return strip_bom(content.toString('utf8'))
 }
 
 const is_plain_object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -707,8 +707,12 @@ const release_start_lock = lock => {
 	try { fs.closeSync(lock.descriptor) } finally { fs.unlinkSync(lock.path) }
 }
 
+// Windows PowerShell 5.1 prefixes piped text with a UTF-8 byte-order mark
+// unless the console input encoding is changed; it is never owner text.
+const strip_bom = text => text.replace(/^\uFEFF/u, '')
+
 const read_start_message = () => {
-	const message = fs.readFileSync(0, 'utf8').replace(/\r\n?/gu, '\n')
+	const message = strip_bom(fs.readFileSync(0, 'utf8')).replace(/\r\n?/gu, '\n')
 	if (message.trim().length === 0) throw new Error('start received an empty owner message on standard input')
 	if (Buffer.byteLength(message, 'utf8') > 64 * 1024) throw new Error('start owner message exceeds the 65536-byte limit')
 	return message.endsWith('\n') ? message.slice(0, -1) : message

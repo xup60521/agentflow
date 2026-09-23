@@ -191,7 +191,9 @@ const read_standard_input = () => {
     if (total > MAX_FILE_BYTES) fail(`standard input is oversized; maximum is ${MAX_FILE_BYTES} bytes`);
     chunks.push(buffer.subarray(0, bytes_read));
   }
-  const content = Buffer.concat(chunks, total);
+  const received = Buffer.concat(chunks, total);
+  // Windows PowerShell 5.1 can prefix piped text with a UTF-8 byte-order mark.
+  const content = received.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) ? received.subarray(3) : received;
   if (!Buffer.from(content.toString('utf8'), 'utf8').equals(content)) fail('standard input is not valid UTF-8');
   return { content, text: content.toString('utf8') };
 };

@@ -1573,6 +1573,23 @@ test('new prints a shell-quoted continuation for the active host and preserves i
 	}
 })
 
+test('start drops a PowerShell byte-order mark from the owner message', () => {
+	const { dir, run } = make_repo()
+	try {
+		fs.appendFileSync(path.join(dir, 'devlog.md'), '\n---\n\n# → Ask / A-001\n\n+\n')
+		run(['add', 'devlog.md'])
+		run(['commit', '-m', 'prepare root intake'])
+		const args = [path.join(__dirname, 'agf.js'), 'start', '--repo', dir, '--host', 'codex', '--message-stdin', '--json']
+		const result = spawnSync(process.execPath, args, { cwd: dir, input: '\uFEFFBOM owner message\r\n', encoding: 'utf8' })
+		assert.equal(result.status, 0, result.stderr)
+		const notebook = fs.readFileSync(path.join(dir, JSON.parse(result.stdout).notebook), 'utf8')
+		assert.match(notebook, /^\+ BOM owner message$/mu)
+		assert.equal(notebook.includes('\uFEFF'), false)
+	} finally {
+		drop(dir)
+	}
+})
+
 test('start in a stream writes only its notebook and keeps interrupted intake on that stream', () => {
 	const { dir, run } = make_repo()
 	try {
