@@ -2784,7 +2784,7 @@ test('missing directories, non-directories, and unavailable executables fail con
         },
       })
 		write_plan(queue, 'plan-001.md')
-		const result = await run_looper({ tasks_dir: queue, root: dir, state_root: test_state_root, fs: denied_fs, silent: true })
+		const result = await run_looper({ tasks_dir: queue, root: dir, state_root: test_state_root, fs: denied_fs, silent: true, executable_available: () => true })
       assert.notEqual(result.code, 0)
       assert.match(result.message, /owner permission denied|ownership evidence/i)
       assert.equal(fs.existsSync(path.join(queue, 'plan-001.md')), true)
