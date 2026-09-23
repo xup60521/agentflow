@@ -385,10 +385,14 @@ const review_decision = (project_root, notebook_path, devlog_text, workspace_dir
   const configuration_files = [config_path === undefined
     ? 'ag.json'
     : node_path.relative(project_root, config_path).split(node_path.sep).join('/')];
-  const bootstrap_files = prior_replies.length === 0 && !has_captured_baseline
+  // A repository with history captures a baseline at startup; setup files it did
+  // not yet track are still bootstrap files, exactly as in an unborn repository.
+  const new_since_baseline = file => !has_captured_baseline
+    || !git_succeeds(project_root, ['cat-file', '-e', `${git_facts.captured_baseline}:${file}`]);
+  const bootstrap_files = prior_replies.length === 0
     ? [
-        ...(changed_files.includes('.gitignore') ? ['.gitignore'] : []),
-        ...(canonical_bootstrap_config(project_root, notebook_path, config_path, active_host) ? configuration_files : [])
+        ...(changed_files.includes('.gitignore') && new_since_baseline('.gitignore') ? ['.gitignore'] : []),
+        ...(new_since_baseline(configuration_files[0]) && canonical_bootstrap_config(project_root, notebook_path, config_path, active_host) ? configuration_files : [])
       ]
     : [];
   const { document_effects, error: metadata_error } = completion_metadata(current_round.reply_text || '', { project_root, notebook_path, workspace_dir, config_path, ask: current_round.id });
