@@ -694,11 +694,13 @@ test('near_keys offers the likely typos, not the whole list', () => {
 
 // ---------- end to end, in a throwaway repo ----------
 
-const make_repo = ({ remote = false, prefix = 'agf-' } = {}) => {
+const make_repo = ({ remote = false, prefix = 'agf-', exact_bytes = false } = {}) => {
 	// realpath: on macOS /var is a symlink to /private/var, and git reports the real path
 	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)))
 	const run = (args, cwd = dir) => execFileSync('git', args, { cwd, encoding: 'utf8' })
 	run(['init', '-b', 'main'])
+	// Tests about exact file bytes must not inherit a global core.autocrlf=true (common on Windows).
+	if (exact_bytes) run(['config', 'core.autocrlf', 'false'])
 	run(['config', 'user.email', 't@example.com'])
 	run(['config', 'user.name', 'T'])
 	fs.writeFileSync(path.join(dir, '.gitignore'), '.worktrees/\n')
@@ -1983,7 +1985,7 @@ test('finish local delivery refuses a stream tip movement before the default-ref
 })
 
 test('finish preparation aborts remote and local conflicts without moving the default branch', () => {
-	const remote_case = make_repo({ remote: true })
+	const remote_case = make_repo({ remote: true, exact_bytes: true })
 	const remote_wt = open_stream(remote_case.dir, 'login page')
 	commit_stream_file(remote_case.run, remote_wt, 'shared.txt', 'stream\n')
 	commit_stream_file(remote_case.run, remote_case.dir, 'shared.txt', 'main\n', 'main conflict')
@@ -2000,7 +2002,7 @@ test('finish preparation aborts remote and local conflicts without moving the de
 	assert.equal(fs.readFileSync(path.join(remote_wt, 'shared.txt'), 'utf8'), 'stream\n')
 	drop(remote_case.dir)
 
-	const local_case = make_repo()
+	const local_case = make_repo({ exact_bytes: true })
 	const local_wt = open_stream(local_case.dir, 'login page')
 	commit_stream_file(local_case.run, local_wt, 'shared.txt', 'stream\n')
 	commit_stream_file(local_case.run, local_case.dir, 'shared.txt', 'main\n', 'main conflict')
@@ -2095,13 +2097,16 @@ test('finish delivery validates original committed notebook bytes and rejects no
 	]
 
 	for (const [label, make_bytes] of variants) {
-		const { dir, run } = make_repo()
+		const { dir, run } = make_repo({ exact_bytes: true })
 		const wt = open_stream(dir, 'login page')
 		const doc = path.join(wt, '.agentflow/features', key, `${key}.devlog.md`)
 		const opened = fs.readFileSync(doc, 'utf8')
 		const valid = opened.replace(new RegExp(`^Feature: ${key} — active —.*$`, 'm'), marker)
 		assert.notEqual(valid, opened)
-		commit_notebook_bytes(run, wt, key, make_bytes(valid), `reject ${label}`)
+		const bytes = make_bytes(valid)
+		assert.ok(!bytes.equals(Buffer.from(valid)), `${label} must change the valid bytes`)
+		commit_notebook_bytes(run, wt, key, bytes, `reject ${label}`)
+		assert.ok(execFileSync('git', ['show', `HEAD:.agentflow/features/${key}/${key}.devlog.md`], { cwd: wt }).equals(bytes), `${label} is committed byte for byte`)
 		const main_before = run(['rev-parse', 'main'])
 		const logs = []
 
