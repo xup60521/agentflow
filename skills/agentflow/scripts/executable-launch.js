@@ -61,8 +61,8 @@ const resolve_launch = (command, options = {}) => {
     }
     let text
     try { text = node_fs.readFileSync(node_path.join(directory, `${command}.cmd`), 'utf8') } catch { continue }
-    const launch = wrapper_launch(directory, text, path_value)
-    if (launch !== null) return launch
+    // cmd.exe would run this wrapper and never reach a later PATH entry.
+    return wrapper_launch(directory, text, path_value)
   }
   return null
 }

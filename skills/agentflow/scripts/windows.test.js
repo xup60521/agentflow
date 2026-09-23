@@ -85,6 +85,17 @@ test('Windows launch runs a node-script wrapper through node with its entry poin
   } finally { drop(root) }
 })
 
+test('Windows launch never skips an unusable wrapper for a later PATH entry', { skip: process.platform !== 'win32' }, () => {
+  const first = tmp()
+  const later = tmp()
+  try {
+    fs.writeFileSync(path.join(first, 'codex.cmd'), '@ECHO off\r\n"%dp0%\\missing\\codex.exe" %*\r\n')
+    fs.writeFileSync(path.join(later, 'codex.exe'), '')
+    assert.equal(launch.resolve_launch('codex', { path_value: `${first}${path.delimiter}${later}` }), null)
+    assert.equal(launch.resolve_launch('codex', { path_value: later }).file, path.join(later, 'codex.exe'))
+  } finally { drop(first); drop(later) }
+})
+
 test('worker selection keeps the profile command name that recipe checks depend on', () => {
   const config = settings.make_template('codex')
   const selection = settings.resolve_worker_tier(config, { role: 'acceptance' }, { active_host: 'codex', executables: ['codex', 'claude'] })
