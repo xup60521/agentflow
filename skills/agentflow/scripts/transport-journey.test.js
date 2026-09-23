@@ -28,7 +28,7 @@ const terminal = (root, script, args, input = '') => {
   return result
 }
 
-for (const git_mode of [true, false]) test(`real terminal portable host, policy changes, pending handoff and closeout in ${git_mode ? 'Git' : 'plain'} folder`, () => {
+for (const git_mode of [true, false]) test(`real terminal portable host, policy changes, pending handoff and closeout in ${git_mode ? 'Git' : 'plain'} folder`, { skip: process.platform === 'win32' ? 'requires /usr/bin/expect and a POSIX terminal' : false }, () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-transport-pty-')))
   if (git_mode) {
     for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.name', 'PTY fixture'], ['config', 'user.email', 'pty@example.invalid']]) execFileSync('git', args, { cwd: root })
