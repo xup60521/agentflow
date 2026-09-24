@@ -343,7 +343,7 @@ test('host templates provide the exact ordered codex and claude profiles', () =>
 				{ id: 'claude-default', command: ['claude', '-p'], priority: 3, family: 'claude' },
 				{ id: 'codex-default', command: ['codex', 'exec'], priority: 3, family: 'codex' },
 			])
-		assert.equal(config['external-workers'][0].tiers.best, host === 'codex' ? 'gpt-6-astra/xhigh' : 'claude-opus-5/high')
+		assert.equal(config['external-workers'][0].tiers.best, host === 'codex' ? 'gpt-6-astra/xhigh' : 'claude-opus-5-5/high')
 	}
 })
 
@@ -473,12 +473,14 @@ test('host templates are exact, valid, and use the owner-approved defaults', () 
 	const claude = settings.make_template('claude')
 
 	assert.equal(codex['external-workers'][0].tiers.best, 'gpt-6-astra/xhigh')
-	assert.equal(codex['external-workers'][0].tiers.better, 'gpt-5.6-sol/low')
-	assert.equal(codex['external-workers'][0].tiers.basic, 'gpt-5.6-luna/xhigh')
-	assert.equal(codex['external-workers'][1].tiers.best, 'claude-opus-5/high')
-	assert.equal(claude['external-workers'][0].tiers.best, 'claude-opus-5/high')
+	assert.equal(codex['external-workers'][0].tiers.better, 'gpt-6-sol/low')
+	assert.equal(codex['external-workers'][0].tiers.basic, 'gpt-6-luna/xhigh')
+	assert.equal(codex['external-workers'][1].tiers.best, 'claude-opus-5-5/high')
+	assert.equal(claude['external-workers'][0].tiers.best, 'claude-opus-5-5/high')
+	assert.equal(claude['external-workers'][0].tiers.better, 'claude-opus-5-5/medium')
+	assert.equal(claude['external-workers'][0].tiers.basic, 'claude-opus-5-5/low')
 	assert.equal(claude['external-workers'][1].tiers.best, 'gpt-6-astra/xhigh')
-	assert.equal(claude['external-workers'][1].tiers.basic, 'gpt-5.6-luna/xhigh')
+	assert.equal(claude['external-workers'][1].tiers.basic, 'gpt-6-luna/xhigh')
 	assert.deepEqual(settings.validate_config(codex, { active_host: 'codex', ...all_executables }).errors, [])
 	assert.deepEqual(settings.validate_config(claude, { active_host: 'claude', ...all_executables }).errors, [])
 })
@@ -590,7 +592,7 @@ test('public setting paths use kebab-case and address profile ids', () => {
 	assert.deepEqual(changes.changes, [
 		'ask-names: on → off',
 		'codex-default.best: gpt-6-astra/xhigh → gpt-5.6-terra/high',
-		'claude-default.basic: claude-sonnet-5/high → claude-opus-5/high',
+		'claude-default.basic: claude-opus-5-5/low → claude-opus-5/high',
 	])
 
 	const display = settings.format_settings_display(config, { ...all_executables })
@@ -1103,7 +1105,7 @@ test('tier routing resolves roles through configured tiers and exposes ordered f
 	const config = settings.make_template('codex')
 	const acceptance = settings.resolve_worker_tier(config, { role: 'acceptance' }, { active_host: 'codex', ...all_executables })
 	assert.equal(acceptance.tier, 'better')
-	assert.equal(acceptance.model, 'gpt-5.6-sol')
+	assert.equal(acceptance.model, 'gpt-6-sol')
 	assert.equal(acceptance.effort, 'low')
 	const coding = settings.resolve_worker_tier(config, { role: 'coding' }, { active_host: 'codex', ...all_executables })
 	assert.equal(coding.tier, 'basic')
@@ -1115,8 +1117,8 @@ test('tier routing resolves roles through configured tiers and exposes ordered f
 
 test('templates expose cheap models and session exhaustion falls through to the next eligible profile', () => {
 	const config = settings.make_template('codex')
-	assert.equal(config['external-workers'].find(profile => profile.family === 'codex').tiers.cheap, 'gpt-5.6-luna/low')
-	assert.equal(config['external-workers'].find(profile => profile.family === 'claude').tiers.cheap, 'haiku/high')
+	assert.equal(config['external-workers'].find(profile => profile.family === 'codex').tiers.cheap, 'gpt-6-luna/low')
+	assert.equal(config['external-workers'].find(profile => profile.family === 'claude').tiers.cheap, 'claude-sonnet-5/high')
 	const first = settings.resolve_worker_tier(config, { role: 'acceptance' }, { active_host: 'codex', ...all_executables, cli_provider: 'on' })
 	const failure = settings.resolve_dispatch_failure(config, first, {
 		active_host: 'codex',
@@ -1547,7 +1549,7 @@ test('dispatch fallback skips failed duplicate values and renders the substituti
 	const codex = settings.make_template('codex')
 	const basic = settings.resolve_worker_tier(codex, { role: 'coding' }, { active_host: 'codex', ...all_executables })
 	assert.equal(settings.resolve_dispatch_failure(codex, basic).fallback.tier, 'cheap')
-	assert.throws(() => settings.resolve_dispatch_failure(claude, selection, { failed_values: ['claude-opus-5/high', 'claude-sonnet-5/high', 'haiku/high'] }), /no distinct configured worker value/)
+	assert.throws(() => settings.resolve_dispatch_failure(claude, selection, { failed_values: ['claude-opus-5-5/high', 'claude-opus-5-5/low', 'claude-sonnet-5/high'] }), /no distinct configured worker value/)
 	assert.throws(() => settings.resolve_dispatch_failure(claude, selection, { owner_override: true }), /owner-selected model/)
 })
 
