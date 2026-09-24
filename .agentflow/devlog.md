@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: reviewed OpenCode plan at 525ff21867cf990786e5b57ebfa60c29e7285470.
+Current commit: model defaults 8f1f77e and closeout fix d7eb7df committed locally.
 
-Tests/scenarios: no implementation tests run; source unchanged.
+Tests/scenarios: settings validation passed; settings tests 81/82 plus corrected focused test passed; round-linter 319 passed, 3 skipped.
 
-Configuration: ag.json — schema v7; validated for codex this round.
+Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: implementation approval requested for the exact reviewed design.
+Proven: owner-selected model tiers configured and independently reviewed; cross-day closeout check repaired.
 
-Open: awaiting exact Design Go.
+Open: none.
 
-Next: owner replies Design Go: 525ff21.
+Next: await owner request.
 
-Artifacts: .agentflow/artifacts/A-001-opencode-support/design.md; review records.
+Artifacts: .agentflow/artifacts/A-003-model-update/review.md; .agentflow/artifacts/A-003-model-update/timestamp-review.md.
 
 Archived eras: none.
 
@@ -113,6 +113,20 @@ Streams: none.
 
 + continue
 
++ 接管 A-003
+  做事不要做一半，給我她們各自的模型列表
+
++ continue
+
++ 停
+  我的意思是要你列出agentflow的設定，我來決定要怎麼改
+
++ codex模型更新到gpt-6系列，我認為可以
+  但Claude的部分，best 換成 opus-5-5/high
+  Better 換成 opus-5-5/medium
+  basic 換成 opus-5-5/low
+  cheap 換成sonnet-5/high
+
 ## [WIP-001] Checkpoint — 2026-09-21 16:05:51 +0800 (A-003)
 
 - **Finished:** 已完成 T-4：schema v8 結構化 model/effort、OpenCode host identity、literal worker dispatch 與 focused tests（commit `413cb7d`）。
@@ -134,3 +148,59 @@ Streams: none.
 - 清理：移除 `thin-customization` stream 與五個已被涵蓋的 `pr-*` worktree，刪除 `windows-remote-v8.2` 與 fork 上的 `pre-v8.2-main`；PowerShell UTF-8 修正送成 fork PR #1。
 
 - 下一步：以乾淨環境比較 8.2 `main` 與 8.3 overlay 在 Windows 上的測試結果，並規劃把 overlay 改為 fork 的 main line（需擁有者核准）。
+
+## [RUN-002] Event — 2026-09-25 00:08:36 +0800 (A-003)
+
+- Codex GPT-6 與擁有者指定的 Claude 分級已提交；設定驗證、相關測試與獨立複審通過。
+- `agf close` 因 A-003 既有 2026-09-23 RUN 時間超出 24 小時窗口而拒絕完成；歷史 RUN 不可擅自改寫。審查報告缺少的機器欄位已補上。
+
+# ← Reply / A-003
+
+* _2026-09-25 00:12:12 +0800 (gpt-6-sol/low)_
+
+## [SUMMARY]
+
+- 已依指定值更新 AgentFlow 的 Codex 與 Claude 外部 worker 四級模型設定；目前對話主模型不受此設定切換。
+
+- 設定、測試與獨立審查通過；跨日回合的結案時間檢查也已修正。
+
+## [FINAL REPORT]
+
+1. 原 A-003 OpenCode 工作
+
+   - 依既有擁有者決定，舊 8.2 實作已停止；本輪沒有重啟該工作。
+
+2. 模型設定
+
+   - Codex：best `gpt-6-astra/xhigh`、better `gpt-6-sol/low`、basic `gpt-6-luna/xhigh`、cheap `gpt-6-luna/low`。
+
+   - Claude：best `claude-opus-5-5/high`、better `claude-opus-5-5/medium`、basic `claude-opus-5-5/low`、cheap `claude-sonnet-5/high`。
+
+   - `ag.json` 與兩種 host 的預設樣板已更新；godev 啟動時將專案設定自動遷移至必要的 schema 8。
+
+   - `agf settings validate` 通過。`ag-settings.test.js` 先有 81/82 通過，修正一處舊預期後，該項 focused rerun 通過。模型變更的獨立審查通過。
+
+3. 跨日結案檢查
+
+   - 修正舊 RUN 時間戳使長回合無法結案的問題；保留未來時間、無效時間與完全過期回合的攔截。
+
+   - `round-linter.test.js` 319 通過、3 略過、0 失敗；獨立審查 Verdict、Outcome、Minimality、Conformance 均為 PASS。審查指出若同輪有近期 RUN，舊 Reply 時間仍可能通過，這是非阻擋的紀錄品質限制。
+
+   - Host inspection：PASS — 已檢查最終模型值、來源範圍、schema 遷移與跨日時間修正；沒有保留無關的 `.gitignore` 變更。
+
+   - **Key Records — read these first**
+
+     - `.agentflow/artifacts/A-003-model-update/review.md`：模型設定與 schema 遷移的獨立審查。
+
+     - `.agentflow/artifacts/A-003-model-update/timestamp-review.md`：跨日時間檢查修正的獨立審查及其限制。
+
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+---
+
+# → Ask / A-004 (xup60521)
+
++
