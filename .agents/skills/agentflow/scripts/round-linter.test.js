@@ -555,6 +555,18 @@ node_test.test('timestamps_sane passes for a recent fixed timestamp', () => {
   node_assert.strictEqual(status_for(result, 'timestamps_sane').status, 'pass');
 });
 
+node_test.test('timestamps_sane accepts an older checkpoint when the round has recent activity', () => {
+  const devlog_text = `# → Ask / A-001\n\n+ work\n\n## [RUN-001] Event — 2026-08-13 10:00:00 +0800 (A-001)\n\n- earlier work\n\n# ← Reply / A-001\n\n* _2026-08-15 11:00:00 +0800 (test-model)_\n\nDone.\n`;
+  const result = lint_round({ devlog_text, now_ms: fixed_now_ms });
+  node_assert.equal(status_for(result, 'timestamps_sane').status, 'pass');
+});
+
+node_test.test('timestamps_sane still rejects a round with no recent activity', () => {
+  const result = lint_round({ devlog_text: devlog_with_stamp('2026-08-13 10:00:00 +0800'), now_ms: fixed_now_ms });
+  node_assert.equal(status_for(result, 'timestamps_sane').status, 'fail');
+  node_assert.match(status_for(result, 'timestamps_sane').detail, /too old/);
+});
+
 node_test.test('timestamps_sane fails for a timestamp far in the future', () => {
   const result = lint_round({
     devlog_text: devlog_with_stamp('2026-08-15 16:00:00 +0800'),

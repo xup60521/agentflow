@@ -888,6 +888,10 @@ const lint_timestamps = (devlog_text, now_ms, future_skew_min, max_age_hours) =>
 
   const future_limit_ms = now_ms + future_skew_min * 60000;
   const age_limit_ms = now_ms - max_age_hours * 3600000;
+  const has_recent_stamp = stamps.some(stamp => {
+    const stamp_ms = parse_numeric_timestamp(stamp);
+    return Number.isFinite(stamp_ms) && stamp_ms >= age_limit_ms && stamp_ms <= future_limit_ms;
+  });
   const bad_stamps = stamps.reduce((bad, stamp) => {
     const stamp_ms = parse_numeric_timestamp(stamp);
     const reasons = [];
@@ -900,7 +904,7 @@ const lint_timestamps = (devlog_text, now_ms, future_skew_min, max_age_hours) =>
       reasons.push('future');
     }
 
-    if (stamp_ms < age_limit_ms) {
+    if (stamp_ms < age_limit_ms && !has_recent_stamp) {
       reasons.push('too old');
     }
 
