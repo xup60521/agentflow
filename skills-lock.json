@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "agentflow": {
+      "source": "xup60521/agentflow",
+      "sourceType": "github",
+      "skillPath": "skills/agentflow/SKILL.md",
+      "computedHash": "731e373968621b5afe547606ae7a448262e88ce0feaae6986c9e9694195d294f"
+    }
+  }
+}
