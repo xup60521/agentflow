@@ -40,10 +40,10 @@
       "priority": 3,
       "family": "codex",
       "tiers": {
-        "best": "gpt-6-astra/xhigh",
-        "better": "gpt-6-sol/low",
-        "basic": "gpt-6-luna/xhigh",
-        "cheap": "gpt-6-luna/low"
+        "best": "gpt-6-astra/medium",
+        "better": "gpt-6-1-sol/high",
+        "basic": "gpt-6-1-sol/medium",
+        "cheap": "gpt-6-luna/xhigh"
       }
     },
     {
