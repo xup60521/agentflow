@@ -11,8 +11,13 @@
 //   node install-hook.js --project --quiet      no output (for scripted use)
 //
 // Host config targets (both use the same {hooks: {Stop: [...]}} JSON shape):
-//   claude  project ./.claude/settings.json   global ~/.claude/settings.json
-//   codex   project ./.codex/hooks.json       global ~/.codex/hooks.json
+//   claude  project ./.claude/settings.local.json   global ~/.claude/settings.json
+//   codex   project ./.codex/hooks.json             global ~/.codex/hooks.json
+//
+// The Claude project hook lives in settings.local.json, the machine-local file,
+// so a project keeps its shared .claude/settings.json and .claude/skills in Git.
+// Older installs wrote ./.claude/settings.json; every run removes the verified
+// Agentflow hooks from there so the hook is never registered twice.
 //
 // Writing a project file for a host that never runs in this repo is harmless:
 // each CLI only reads its own file, and the hook itself no-ops without a
@@ -107,10 +112,16 @@ const parse_args = argv => {
 
 const config_path_for = (host, scope, cwd = process.cwd()) => {
   const base = scope === 'global' ? node_os.homedir() : cwd;
-  const file = host === 'claude' ? node_path.join('.claude', 'settings.json') : node_path.join('.codex', 'hooks.json');
+  const file = host === 'claude'
+    ? node_path.join('.claude', scope === 'global' ? 'settings.json' : 'settings.local.json')
+    : node_path.join('.codex', 'hooks.json');
 
   return node_path.join(base, file);
 };
+
+const legacy_config_path_for = (host, scope, cwd = process.cwd()) => host === 'claude' && scope === 'project'
+  ? node_path.join(cwd, '.claude', 'settings.json')
+  : null;
 
 const read_config = config_path => {
   if (!node_fs.existsSync(config_path)) {
@@ -205,6 +216,34 @@ const remove_hook = (config, host, { scope = 'project', cwd = process.cwd(), eve
   return { config: next_config, changed: true };
 };
 
+const EVENTS = ['Stop', 'UserPromptSubmit'];
+
+// Removes only verified Agentflow hooks from the pre-settings.local.json file.
+// A file left empty held nothing but those hooks, so it is deleted without a backup.
+const clear_legacy_hooks = (host, scope, say, cwd) => {
+  const legacy_path = legacy_config_path_for(host, scope, cwd);
+  if (legacy_path === null || !node_fs.existsSync(legacy_path)) return false;
+  let config;
+  try { config = read_config(legacy_path); } catch { return false; }
+  let next_config = config;
+  let changed = false;
+  for (const event of EVENTS) {
+    const result = remove_hook(next_config, host, { scope, cwd, event });
+    next_config = result.config;
+    changed = changed || result.changed;
+  }
+  if (!changed) return false;
+  if (Object.keys(next_config).length === 0) {
+    node_fs.unlinkSync(legacy_path);
+    say(`${host}: removed ${legacy_path}, which held only the old Agentflow hooks`);
+    return true;
+  }
+  const backup_path = backup(legacy_path);
+  ag_settings.write_text_atomic(legacy_path, `${JSON.stringify(next_config, null, 2)}\n`);
+  say(`${host}: removed the old Agentflow hooks from ${legacy_path}; backup of the previous file: ${backup_path}`);
+  return true;
+};
+
 const apply_to_host = (host, scope, off, say, cwd = process.cwd()) => {
   if (!HOSTS.includes(host)) {
     const result = { status: 'not_available', host, reason: 'no_host_hook_integration', instructions: manual_instructions(host) };
@@ -215,13 +254,15 @@ const apply_to_host = (host, scope, off, say, cwd = process.cwd()) => {
   const config = read_config(config_path);
   let next_config = config;
   let changed = false;
-  for (const event of ['Stop', 'UserPromptSubmit']) {
+  for (const event of EVENTS) {
     const result = (off ? remove_hook : add_hook)(next_config, host, { scope, cwd, event });
     next_config = result.config;
     changed = changed || result.changed;
   }
 
   if (!changed) {
+    // The current file is already right; only an old copy may remain.
+    if (clear_legacy_hooks(host, scope, say, cwd)) return { status: 'available', host, changed: true, config_path };
     say(`${host}: no change — the Agentflow hooks were already ${off ? 'absent from' : 'present in'} ${config_path}`);
     return { status: 'available', host, changed: false, config_path };
   }
@@ -235,6 +276,7 @@ const apply_to_host = (host, scope, off, say, cwd = process.cwd()) => {
   if (backup_path) {
     say(`${host}: backup of the previous file: ${backup_path}`);
   }
+  clear_legacy_hooks(host, scope, say, cwd);
   return { status: 'available', host, changed: true, config_path };
 };
 
@@ -310,10 +352,14 @@ const install = ({ scope = 'project', off = false, quiet = false, hosts = HOSTS,
 const inspect = ({ cwd = process.cwd(), scope = 'project', hosts = HOSTS } = {}) => {
   const found = [];
   for (const host of hosts) {
-    const config_path = config_path_for(host, scope, cwd);
-    const config = read_config(config_path);
-    if (['Stop', 'UserPromptSubmit'].some(event => remove_hook(config, host, { scope, cwd, event }).changed)) {
-      found.push(`remove the verified Agentflow Stop hook from ${config_path}`);
+    const legacy_path = legacy_config_path_for(host, scope, cwd);
+    for (const config_path of [config_path_for(host, scope, cwd), legacy_path]) {
+      if (config_path === null) continue;
+      let config;
+      try { config = read_config(config_path); } catch (error) { if (config_path === legacy_path) continue; throw error; }
+      if (EVENTS.some(event => remove_hook(config, host, { scope, cwd, event }).changed)) {
+        found.push(`remove the verified Agentflow Stop hook from ${config_path}`);
+      }
     }
   }
   if (scope === 'project') {

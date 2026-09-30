@@ -521,6 +521,27 @@ test('finish help receives the dispatcher terminal width', () => {
 	assert.equal(logs.join(''), agf.render_usage(40))
 })
 
+for (const text of ['.claude/\n.codex/\n.opencode/\n.worktrees/\n', '.claude/*\n!.claude/skills/\n/.codex\n.worktrees\n']) test(`ignore update leaves broader host rules alone: ${JSON.stringify(text)}`, () => {
+	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-ignore-')))
+	try {
+		fs.writeFileSync(path.join(dir, '.gitignore'), text)
+		agf.update_ignore_file(dir)
+		assert.equal(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), text)
+	} finally { drop(dir) }
+})
+
+test('ignore update leaves project skills and shared host settings trackable', () => {
+	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-ignore-')))
+	try {
+		execFileSync('git', ['init', '-q'], { cwd: dir })
+		agf.update_ignore_file(dir)
+		const env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1', XDG_CONFIG_HOME: dir }
+		const ignored = file => spawnSync('git', ['check-ignore', '-q', '--no-index', file], { cwd: dir, env }).status === 0
+		for (const file of ['.claude/settings.local.json', '.claude/settings.json.agentflow-backup', '.codex/hooks.json', '.worktrees/a/x']) assert.ok(ignored(file), file)
+		for (const file of ['.claude/skills/agentflow/SKILL.md', '.claude/settings.json', '.codex/config.toml', '.opencode/plugins/x.js']) assert.ok(!ignored(file), file)
+	} finally { drop(dir) }
+})
+
 test('init creates the configured notebook, ignore entries, and project hooks in one repeatable action', () => {
 	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-init-')))
 	execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir })
@@ -534,7 +555,7 @@ test('init creates the configured notebook, ignore entries, and project hooks in
 	assert.equal(second.notebook, '.agentflow/devlog.md')
 	assert.equal(fs.readFileSync(path.join(dir, '.agentflow', 'devlog.md'), 'utf8'), first_notebook)
 	assert.equal(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), first_ignore)
-	assert.deepEqual(first_ignore.trim().split('\n'), ['.claude/', '.codex/', '.opencode/', '.worktrees/'])
+	assert.deepEqual(first_ignore.trim().split('\n'), ['.claude/settings.local.json', '.claude/*.agentflow-backup', '.codex/hooks.json', '.codex/*.agentflow-backup', '.worktrees/'])
 	const host = ag_settings.detect_host()
 	assert.ok(fs.existsSync(install_hook.config_path_for(host, 'project', dir)))
 	assert.equal(fs.existsSync(path.join(dir, host === 'codex' ? '.claude' : '.codex')), false)

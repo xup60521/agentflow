@@ -943,7 +943,8 @@ const temporary_path = file_path => {
 }
 
 // Entries init adds to .gitignore; startup recognizes exactly this bootstrap.
-const ignore_entries = Object.freeze(['.claude/', '.codex/', '.opencode/', '.worktrees/'])
+// Only files Agentflow writes: the rest of .claude/ and .codex/ (skills, shared settings) stays trackable.
+const ignore_entries = Object.freeze(['.claude/settings.local.json', '.claude/*.agentflow-backup', '.codex/hooks.json', '.codex/*.agentflow-backup', '.worktrees/'])
 
 const write_text_atomic = (file_path, text, options = {}) => {
 	const fs_api = options.fs || node_fs

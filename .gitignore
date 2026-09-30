@@ -1,4 +1,6 @@
-.claude/
+# Local Claude Code state; project skills stay tracked.
+.claude/*
+!.claude/skills/
 .codex/
 .worktrees/
 # Local OpenCode state; the shipped plugin stays tracked.

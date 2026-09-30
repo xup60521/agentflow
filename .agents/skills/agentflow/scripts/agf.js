@@ -206,7 +206,13 @@ const update_ignore_file = (repo) => {
 	const current = fs.existsSync(ignore_path) ? fs.readFileSync(ignore_path, 'utf8') : ''
 	const lines = current.split(/\r?\n/u).filter(Boolean)
 	const next = [...lines]
-	for (const entry of ag_settings.ignore_entries) if (!next.includes(entry)) next.push(entry)
+	// A broader existing rule (`.claude/`, `/.claude/*`) already covers an entry; never add a narrower duplicate.
+	const covers = (line, entry) => {
+		const rule = line.trim().replace(/^\//u, '')
+		const folder = entry.slice(0, entry.indexOf('/') + 1)
+		return [entry, folder, `${folder}*`, folder.slice(0, -1)].includes(rule)
+	}
+	for (const entry of ag_settings.ignore_entries) if (!next.some(line => covers(line, entry))) next.push(entry)
 	const text = `${next.join('\n')}\n`
 	if (text !== current) ag_settings.write_text_atomic(ignore_path, text)
 	return ignore_path
@@ -646,7 +652,7 @@ const start_relative = (repo, file) => path.relative(repo, file).split(path.sep)
 const start_snapshot_paths = (repo, host, target = '.agentflow/devlog.md') => [...new Set([
 	'ag.json', '.gitignore', target, '.agentflow/devlog.md',
 	...(['codex', 'claude'].includes(host) ? [`.${host}/settings.json`, `.${host}/hooks.json`] : []),
-	'.claude/settings.json', '.codex/hooks.json',
+	'.claude/settings.local.json', '.claude/settings.json', '.codex/hooks.json',
 ])]
 
 const start_provenance = ({ repo, paths, before }) => paths.flatMap(relative => {
@@ -773,7 +779,7 @@ const start_result = ({ repo, host, host_family, notebook, notebook_text, intake
 	configuration: intake.configuration,
 	setup_created: setup_result.created,
 	setup_created_files: setup_result.created_files,
-	hooks_restart_required: setup_result.changed_files.includes(host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json'),
+	hooks_restart_required: setup_result.changed_files.some(file => (host === 'codex' ? ['.codex/hooks.json'] : ['.claude/settings.local.json', '.claude/settings.json']).includes(file)),
 	hooks: hook_result_for(host, hook_result),
 	setup: {
 		created: setup_result.created,
@@ -781,7 +787,7 @@ const start_result = ({ repo, host, host_family, notebook, notebook_text, intake
 		changed_files: setup_result.changed_files,
 		provenance,
 		tracked_project_records: setup_result.changed_files.filter(file => [notebook, 'ag.json', '.gitignore'].includes(file)),
-		ignored_local_host_settings: setup_result.changed_files.filter(file => ['.codex/hooks.json', '.claude/settings.json'].includes(file)),
+		ignored_local_host_settings: setup_result.changed_files.filter(file => ['.codex/hooks.json', '.claude/settings.local.json'].includes(file)),
 	},
 	message: { inserted: message_result.inserted, reason: message_result.reason },
 	current_ask_identifier: intake.current_ask?.id || null,

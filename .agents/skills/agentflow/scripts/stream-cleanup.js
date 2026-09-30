@@ -63,7 +63,7 @@ const inspect = ({ worktree, notebook, key, git }) => {
           || input.test(local) || relative === info.relative
           || new RegExp(`^features/${key}/A-\\d{3}/completion(?:\\.ref)?\\.json$`).test(local)
       }
-      if (relative === '.codex/hooks.json' || relative === '.claude/settings.json') known = owned_hooks(item.bytes, relative.startsWith('.codex/') ? 'codex' : 'claude')
+      if (['.codex/hooks.json', '.claude/settings.local.json', '.claude/settings.json'].includes(relative)) known = owned_hooks(item.bytes, relative.startsWith('.codex/') ? 'codex' : 'claude')
       if (!known) throw Error(`worktree still has unsaved or unknown ignored files: ${JSON.stringify(relative)}`)
       files.push(item)
     }

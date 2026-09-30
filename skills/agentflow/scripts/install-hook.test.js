@@ -29,7 +29,7 @@ test('project install writes both host configs', () => {
 
   run(dir, ['--project', '--quiet']);
 
-  const claude = read_json(node_path.join(dir, '.claude', 'settings.json'));
+  const claude = read_json(node_path.join(dir, '.claude', 'settings.local.json'));
   const codex = read_json(node_path.join(dir, '.codex', 'hooks.json'));
   assert.ok(has_our_stop_hook(claude));
   assert.ok(has_our_stop_hook(codex));
@@ -70,7 +70,7 @@ test('running twice never duplicates the entry', () => {
   run(dir, ['--project', '--quiet']);
   run(dir, ['--project', '--quiet']);
 
-  const claude = read_json(node_path.join(dir, '.claude', 'settings.json'));
+  const claude = read_json(node_path.join(dir, '.claude', 'settings.local.json'));
   const codex = read_json(node_path.join(dir, '.codex', 'hooks.json'));
 
   assert.strictEqual(claude.hooks.Stop.length, 1);
@@ -106,7 +106,7 @@ test('--off removes the entry from both hosts', () => {
   run(dir, ['--project', '--quiet']);
   run(dir, ['--project', '--off', '--quiet']);
 
-  assert.ok(!has_our_stop_hook(read_json(node_path.join(dir, '.claude', 'settings.json'))));
+  assert.ok(!has_our_stop_hook(read_json(node_path.join(dir, '.claude', 'settings.local.json'))));
   assert.ok(!has_our_stop_hook(read_json(node_path.join(dir, '.codex', 'hooks.json'))));
 });
 
@@ -116,7 +116,35 @@ test('--host codex touches only the codex config', () => {
   run(dir, ['--project', '--host', 'codex', '--quiet']);
 
   assert.ok(has_our_stop_hook(read_json(node_path.join(dir, '.codex', 'hooks.json'))));
-  assert.ok(!node_fs.existsSync(node_path.join(dir, '.claude', 'settings.json')));
+  assert.ok(!node_fs.existsSync(node_path.join(dir, '.claude', 'settings.local.json')));
+});
+
+test('project install moves an old Claude hook out of the shared settings file', () => {
+  const dir = fresh_dir();
+  const shared_path = node_path.join(dir, '.claude', 'settings.json');
+  const owned = { type: 'command', command: `node '${node_path.join(__dirname, 'stop-hook.js')}' --host claude` };
+  node_fs.mkdirSync(node_path.dirname(shared_path), { recursive: true });
+  node_fs.writeFileSync(shared_path, `${JSON.stringify({ hooks: { Stop: [{ hooks: [owned] }], UserPromptSubmit: [{ hooks: [owned] }] } }, null, 2)}\n`);
+
+  run(dir, ['--project', '--host', 'claude', '--quiet']);
+
+  assert.ok(has_our_stop_hook(read_json(node_path.join(dir, '.claude', 'settings.local.json'))));
+  assert.ok(!node_fs.existsSync(shared_path));
+  assert.ok(!node_fs.existsSync(`${shared_path}.agentflow-backup`));
+});
+
+test('project install keeps shared Claude settings while removing the old hook', () => {
+  const dir = fresh_dir();
+  const shared_path = node_path.join(dir, '.claude', 'settings.json');
+  const owned = { type: 'command', command: `node '${node_path.join(__dirname, 'stop-hook.js')}' --host claude` };
+  node_fs.mkdirSync(node_path.dirname(shared_path), { recursive: true });
+  node_fs.writeFileSync(shared_path, `${JSON.stringify({ model: 'opus', hooks: { Stop: [{ hooks: [owned] }] } }, null, 2)}\n`);
+
+  run(dir, ['--project', '--host', 'claude', '--quiet']);
+  run(dir, ['--project', '--host', 'claude', '--quiet']);
+
+  assert.deepEqual(read_json(shared_path), { model: 'opus' });
+  assert.ok(has_our_stop_hook(read_json(node_path.join(dir, '.claude', 'settings.local.json'))));
 });
 
 test('--off removes only the owned nested command and preserves siblings and entry metadata', () => {
