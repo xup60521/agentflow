@@ -4,15 +4,15 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: A-005 committed locally on main; not pushed.
+Current commit: A-006 pushed to origin/main (xup60521/agentflow).
 
-Tests/scenarios: prompt-compression 12, alignment 14, language-contract 2, delegation-route 26 pass.
+Tests/scenarios: no code changes this round; A-005 tests unchanged.
 
 Configuration: ag.json — schema v8; validated for claude this round.
 
-Proven: T3 delegate_task rule added as internal worker; independent T3-dispatched review PASS.
+Proven: main pushed to the xup60521 fork only.
 
-Open: local commits not pushed; foreign uncommitted .agents/ and skills-lock.json changes.
+Open: foreign uncommitted .agents/ and skills-lock.json changes.
 
 Next: await the owner.
 
@@ -456,5 +456,41 @@ Streams: none.
 ---
 
 # → Ask / A-006 (zup-swift-book)
+
++ push to xup60521/agentflow
+  not the original one. I want to maintain my custom version.
+
+---
+
+## [RUN-001] Event — 2026-10-05 15:31:02 +0800 (A-006)
+
+- 確認遠端：`origin` 是你的 fork `xup60521/agentflow`，`upstream` 是原版 `agfnow/agentflow`。只推送到 `origin` 的 `main`；推送前 `origin/main` 沒有本機缺少的提交，屬快轉推送。
+
+# ← Reply / A-006
+
+* _2026-10-05 15:31:02 +0800 (claude/unknown)_
+
+## [SUMMARY]
+
+- 已推送到你的 fork `xup60521/agentflow` 的 `main`；原版 `agfnow/agentflow` 沒有動。
+
+## [FINAL REPORT]
+
+1. **推送到 xup60521/agentflow，不要推到原版**
+
+   - 成功：`main` 推送到 `origin`（`https://github.com/xup60521/agentflow.git`），內容包含 A-004、A-005 的提交與本輪紀錄。
+
+   - 這台機器另有 `upstream` 指向原版 `agfnow/agentflow`，本輪沒有推送過去。
+
+   - `.agents/` 安裝副本與 `skills-lock.json` 的未提交修改仍不屬本輪，沒有一起推送。
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+
+---
+
+# → Ask / A-007 (zup-swift-book)
 
 +
