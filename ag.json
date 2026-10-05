@@ -10,13 +10,14 @@
     "ask-names": "on",
     "allow-ag": "on",
     "large-work-minutes": 120,
-    "completion-cleanup": "off",
-    "completion-cleanup-interval-days": 7,
     "allowed-worker": [
       "external",
+      "internal",
       "host"
     ],
-    "review-policy": "require-independent"
+    "review-policy": "require-independent",
+    "completion-cleanup": "off",
+    "completion-cleanup-interval-days": 7
   },
   "pipeline-roles": {
     "requirements": "better",
