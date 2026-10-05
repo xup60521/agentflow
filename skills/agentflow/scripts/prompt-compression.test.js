@@ -115,6 +115,7 @@ test('advanced feature rulebooks remain complete and mechanically bounded', () =
 	assert.match(delegation, /T3 Code hosts:.*`delegate_task`.*`internal` candidate/s)
 	assert.match(delegation, /`orchestrator_capabilities`/)
 	assert.match(delegation, /T3 Code.*external-runner-v1.*remains the route/s)
+	assert.match(delegation, /Never end a turn while a worker is pending, except an async T3 child/)
 	assert.match(streams, /finish --prep/)
 	assert.match(streams, /finish --deliver/)
 	assert.match(looper, /select_frozen_ready_plans/)

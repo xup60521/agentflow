@@ -46,7 +46,7 @@ An implementation worker may change its declared source and result paths only. A
 
 A report opens on line one with fresh machine-local `* _YYYY-MM-DD HH:MM:SS ±HHMM (<Model>/<Effort>)_`, contains exactly one final content line beginning `Self-check:`, and has no content after it. Worker text cannot prove dispatcher metadata, timing, process, transport, or content identity.
 
-Run synchronously or keep one tracked process and independent wake mechanism. Never end a turn while a worker is pending. Do not impose a fixed elapsed-time deadline on useful worker activity; set one only for a real owner, provider, or task limit.
+Run synchronously or keep one tracked process and independent wake mechanism. Never end a turn while a worker is pending, except an async T3 child whose completion notification will wake this thread (see T3 Code hosts above). Do not impose a fixed elapsed-time deadline on useful worker activity; set one only for a real owner, provider, or task limit.
 
 The devlog's ten-minute checkpoint interval is reporting cadence only: it is never a worker deadline or hang signal. Check process, transport, output, and expected file activity early and periodically. Silent reasoning or unchanged files alone never prove a hang; require concrete process or transport failure evidence before terminating. Preserve diagnostics, record the incident, and relaunch at most twice with a corrected brief. — I-050.
 
