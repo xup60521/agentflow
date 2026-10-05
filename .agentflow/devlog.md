@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: A-004 question round committed locally.
+Current commit: A-005 committed locally on main; not pushed.
 
-Tests/scenarios: no code changes; threeways review run 1 completed (exit 0).
+Tests/scenarios: prompt-compression 12, alignment 14, language-contract 2, delegation-route 26 pass.
 
 Configuration: ag.json — schema v8; validated for claude this round.
 
-Proven: T3 subagent replacement scope analysed and reviewed by gpt-6.1-sol (AGREE).
+Proven: T3 delegate_task rule added as internal worker; independent T3-dispatched review PASS.
 
-Open: owner decisions on adapter design and threeways model-passing fix.
+Open: local commits not pushed; foreign uncommitted .agents/ and skills-lock.json changes.
 
-Next: await owner answers in A-004 Questions.
+Next: await the owner.
 
-Artifacts: .agentflow/artifacts/A-004-t3-subagents/threeways-report-r1.md.
+Artifacts: .agentflow/artifacts/A-005-t3-internal/.
 
 Archived eras: none.
 
@@ -320,16 +320,141 @@ Streams: none.
 
    - Suggested default: 要，先只做設計，不實作。
 
-   - ans:
+   - ans: yes 就專注於把external worker 融入t3 code。但不是全部刪掉，而是在t3 code 環境當中時，能夠使用內建的功能
 
 2. 要不要另外修正 threeways 沒傳模型參數，以及 `gpt-6-1-sol` 名稱的問題？
 
    - Suggested default: 要，作為獨立的小修正，先寫失敗測試。
 
-   - ans:
+   - ans: 沒關係
 
 ---
 
 # → Ask / A-005 (zup-swift-book)
+
++ godev
+  continue. it should be a small fix
+
++ Delegated task node:delegated-task:command%3Amcp%3Ad8d55b9e-a60c-4fe2-b078-5dbf2570bc19%3Adelegate-task%3Aagentflow-A-005-review-r1 reached a terminal state. Use task_status with taskId node:delegated-task:command%3Amcp%3Ad8d55b9e-a60c-4fe2-b078-5dbf2570bc19%3Adelegate-task%3Aagentflow-A-005-review-r1 to read the result.
+
++ Delegated task node:delegated-task:command%3Amcp%3Ad8d55b9e-a60c-4fe2-b078-5dbf2570bc19%3Adelegate-task%3Aagentflow-A-005-review-r2 reached a terminal state. Use task_status with taskId node:delegated-task:command%3Amcp%3Ad8d55b9e-a60c-4fe2-b078-5dbf2570bc19%3Adelegate-task%3Aagentflow-A-005-review-r2 to read the result.
+
+---
+
+## [RUN-001] Event — 2026-10-05 14:30:21 +0800 (A-005)
+
+- 依 A-004 第 1 題答覆實作小修正：T3 Code 環境中把 `delegate_task` 當作 `internal` 執行種類；其他環境仍用外部 CLI。
+- 先加的規則測試失敗，補上 `delegation.md` 段落後 prompt-compression 12、alignment 14、language-contract 2、delegation-route 26 全數通過。
+- `ag.json` 的 `allowed-worker` 經設定工具改為 external、internal、host。
+- 第 2 題答「沒關係」，不修 threeways 模型參數。
+- `.agents/` 安裝副本與 `skills-lock.json` 的未提交變更不屬本輪，未動。
+
+## [RUN-002] Event — 2026-10-05 14:31:05 +0800 (A-005)
+
+- 審查已透過 T3 `delegate_task` 派出（依新規則自我試用）：codex `gpt-6.1-sol`、reasoning high、role review、非同步；規劃器判定 targeted。
+- taskId `...agentflow-A-005-review-r1`；報告路徑 `.agentflow/artifacts/A-005-t3-internal/review.md`。
+- 限制：子代理與主對話共用 checkout，唯讀只靠交辦內容要求，未經工具強制。
+
+## [RUN-003] Event — 2026-10-05 14:34:21 +0800 (A-005)
+
+- 第 1 輪審查：Outcome BLOCKING、Minimality PASS、Conformance BLOCKING。B1 屬實：第 49 行「worker 未完成不能結束回合」與新段落允許非同步 T3 子代理時結束回合互相矛盾。
+- 已修正：第 49 行加上非同步 T3 子代理的例外；新增斷言先失敗（11/1），修正後 prompt-compression 12、alignment 14、language-contract 2 通過。提交 `62947df`。
+- 第 2 輪審查已派出（同模型、同設定，taskId `...review-r2`）。
+
+## [RUN-004] Event — 2026-10-05 14:38:41 +0800 (A-005)
+
+- 第 2 輪審查三項 PASS；第 3 輪補上 `Verdict: PASS`（來源未變、未重跑測試）。
+- 結案仍被擋：結案檢查要的欄位名稱是 `Reviewed implementation commit:`，我的交辦寫成 `Reviewed commit:`。這是我交辦的格式錯誤，不是審查內容問題。
+- 審查已用滿 3 次啟動上限，依規則停止自動重派，不自行修改審查者報告；等待擁有者決定。
+
+## [RUN-005] Event — 2026-10-05 15:28:16 +0800 (A-005)
+
+- 擁有者選擇允許第 4 次啟動（只補格式）。第 4 輪寫出正確的 `Reviewed implementation commit:` 欄位，`Verdict`、Outcome、Minimality、Conformance 皆 PASS；來源未變、未重跑測試。
+- Host review：已檢查兩個提交的最終差異只動 `delegation.md`、一個測試檔與 `ag.json`；沒有碰 threeways 程式，也沒有收入 `.agents/` 與 `skills-lock.json` 的外來變更。
+- origin/main 沒有新提交；本機領先 3 個（含 A-004），本輪只在本機提交，未推送。
+
+# ← Reply / A-005
+
+* _2026-10-05 15:28:16 +0800 (claude/unknown)_
+
+## [SUMMARY]
+
+- 已完成小修正：在 T3 Code 裡，agentflow 現在會把 T3 內建的子代理派工（`delegate_task`）當成「主機原生工具」這種執行方式；不在 T3 時，照舊用外部 CLI（`codex exec`、`claude -p`）。
+
+- 沒有新增程式，只改派工規則文件，並在 `ag.json` 開放這種執行方式。
+
+- 審查本身就用新規則跑：透過 T3 派給 codex `gpt-6.1-sol`（high）。第 1 輪抓到一條規則互相矛盾，修正後第 2 輪全部通過；第 3、4 輪只補上我交辦時寫錯的欄位格式（第 4 次啟動經你同意）。
+
+- 要注意：T3 子代理和主對話共用同一個 checkout，所以規則讓它優先做審查和唯讀工作；要寫程式的 worker 仍走外部一次性 clone，除非你接受共用 checkout 寫入。
+
+- 3 個提交只在本機，沒有推送到 GitHub；要推送請告訴我。
+
+## [FINAL REPORT]
+
+1. **繼續 A-004 的答覆：把 external worker 融入 T3 Code，保留原本路徑，小修正即可**
+
+   - 成功。做法沿用 agentflow 原本就有的 `internal`（主機原生工具）執行種類，程式已能產生「交給原生工具」的派工資料，也會檢查原生任務識別碼；缺的只是規則和設定。
+
+   - `skills/agentflow/references/delegation.md` 新增「T3 Code hosts」一段，規定：
+
+     - 主機有 `delegate_task`、`task_status`、`task_cancel` 時，視為可用的原生派工，前提是 `allowed-worker` 允許 `internal`。
+
+     - 設定的模型與推理強度，要先在 `orchestrator_capabilities`（T3 的即時模型清單）查到，才能填進派工目標；查不到就照既有的替代規則處理，並記錄實際用了什麼。
+
+     - 子代理看不到主對話，交辦內容要完整寫清楚。
+
+     - 子代理共用 checkout，而且 T3 沒有證據能阻止它再往下派工：優先用於審查與唯讀工作，並記錄這兩個限制。
+
+     - 記錄 `taskId`、`childThreadId`、實際模型與推理強度、變更檔案。
+
+     - T3 的完成通知會喚醒主對話，所以非同步派工後可以先結束回合；取消後要用 `task_status` 確認狀態，才能換另一個寫入者。
+
+     - 不在 T3 時，外部 worker 仍走 `external-runner-v1`。
+
+   - 同檔第 49 行原本無條件規定「worker 還沒完成不能結束回合」，已加上「非同步 T3 子代理例外」。
+
+   - `ag.json` 的 `allowed-worker` 經設定工具改為 `external`、`internal`、`host`。設定工具順便把兩個既有欄位換了位置，值沒變。
+
+   - 測試：在 `prompt-compression.test.js` 加了四條規則斷言，都先確認會失敗才改文件。修正後 prompt-compression 12、alignment 14、language-contract 2、delegation-route 26 項通過，0 失敗。
+
+   - 審查（透過 T3 派給 codex `gpt-6.1-sol`、high，唯讀只靠交辦要求，沒有工具強制）：
+
+     - 第 1 輪：Outcome、Conformance 為 BLOCKING。原因屬實：新段落允許結束回合，和第 49 行的禁止規定矛盾，測試也沒抓到。
+
+     - 第 2 輪：三項都 PASS，審查者也比較過更小的改法，認為目前做法已經最小。
+
+     - 第 3、4 輪：我的交辦漏了總判定欄位、又寫錯提交欄位名稱，結案檢查因此擋下。審查者確認來源沒變後補正格式，沒有重新審查內容。第 4 次啟動超過 3 次上限，經你同意才執行。
+
+   - 提交：`70c4c36`（規則與設定）、`62947df`（修正矛盾）。只在本機，沒有推送。
+
+   - 限制：這次只證明文件規則一致，以及 T3 派工實際可用於審查（本輪四次審查就是實例）；還沒有用 T3 子代理跑過寫程式的工作。
+
+   - 順帶發現：審查報告需要的欄位格式（`Verdict:`、`Reviewed implementation commit:`）沒寫在 `delegation.md`，只藏在結案檢查程式裡，所以我交辦時寫錯。這次沒有修，之後可另外處理。
+
+   - **Key Records — read these first**
+
+     [review-r2.md](artifacts/A-005-t3-internal/review-r2.md) — 第 2 輪實質審查，確認矛盾已解除，並說明為何目前改法已經最小。
+
+     [review.md](artifacts/A-005-t3-internal/review.md) — 第 1 輪審查，說明當時找到的規則矛盾。
+
+     [review-r4.md](artifacts/A-005-t3-internal/review-r4.md) — 第 4 輪格式補正，是結案採用的審查紀錄。
+
+2. **A-004 第 2 題（threeways 沒傳模型參數、`gpt-6-1-sol` 名稱）**
+
+   - 你答「沒關係」，本輪沒有修改。
+
+3. **工作區中不屬於本輪的變更**
+
+   - `.agents/skills/agentflow/` 安裝副本與 `skills-lock.json` 有未提交的修改（看起來是重新安裝，把 A-003 的模型設定與時間檢查修正還原了）。本輪沒有動、也沒有提交它們；`.claude/skills/agentflow` 指向這份副本，所以目前執行的 agentflow 不是 `skills/agentflow` 原始碼的版本。
+
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+
+---
+
+# → Ask / A-006 (zup-swift-book)
 
 +
