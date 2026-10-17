@@ -36,6 +36,7 @@ const USAGE_COMMANDS = [
 	{ label: 'skills', syntax: 'agf skills audit [--json]', description: 'inventory local skills and provide a read-only conflict audit prompt' },
 	{ label: 'start', syntax: 'agf start --repo <path> --host <id> [--session <id>] [--host-family <family>] --message-stdin [--json]', description: 'initialize, record the owner message, and return one bounded intake result' },
 	{ label: 'owner', syntax: 'agf owner <inspect|adopt> --notebook <path>', description: 'inspect ownership or explicitly adopt with expected owner, Ask and hash' },
+	{ label: 'review', syntax: 'agf review --notebook <path> [--host <id>]', description: 'show the current review decision before closeout without changing the notebook' },
 	{ label: 'close', syntax: 'agf close --manifest-stdin [--push-authorized]', description: 'validate, replace, commit, and optionally push one prepared closeout manifest' },
 	{ label: 'compact', syntax: 'agf compact --notebook <path> [--host <id>] [--session <id>] [--include-answered true]', description: 'archive completed notebook rounds with byte and hash verification; explicit override includes answered rounds' },
 	{ label: 'init', syntax: 'agf init', description: 'create Agentflow records, ignore entries, and project hooks in one repeatable action' },
@@ -204,16 +205,16 @@ const parse_close_args = (argv) => {
 const update_ignore_file = (repo) => {
 	const ignore_path = path.join(repo, '.gitignore')
 	const current = fs.existsSync(ignore_path) ? fs.readFileSync(ignore_path, 'utf8') : ''
-	const lines = current.split(/\r?\n/u).filter(Boolean)
-	const next = [...lines]
-	// A broader existing rule (`.claude/`, `/.claude/*`) already covers an entry; never add a narrower duplicate.
+	const lines = current.split(/\r?\n/u)
+	// Keep shared skills trackable and preserve owner rules and line endings.
 	const covers = (line, entry) => {
 		const rule = line.trim().replace(/^\//u, '')
 		const folder = entry.slice(0, entry.indexOf('/') + 1)
 		return [entry, folder, `${folder}*`, folder.slice(0, -1)].includes(rule)
 	}
-	for (const entry of ag_settings.ignore_entries) if (!next.some(line => covers(line, entry))) next.push(entry)
-	const text = `${next.join('\n')}\n`
+	const missing = ag_settings.ignore_entries.filter(entry => !lines.some(line => covers(line, entry)))
+	const newline = current.includes('\r\n') ? '\r\n' : '\n'
+	const text = missing.length ? `${missing.join(newline)}${newline}${current}` : current
 	if (text !== current) ag_settings.write_text_atomic(ignore_path, text)
 	return ignore_path
 }
@@ -223,8 +224,22 @@ const init_main = (argv, cwd, log) => {
 	if (args.error || args.key) { log(args.error || 'init accepts no arguments'); return 1 }
 	if (args.help) { log(render_usage(80)); return 1 }
 	const repo = path.resolve(cwd)
+	const config_file = path.join(repo, 'ag.json')
+	const notebook_path = fs.existsSync(config_file)
+		? JSON.parse(fs.readFileSync(config_file, 'utf8'))?.switches?.['target-doc'] || '.agentflow/devlog.md'
+		: '.agentflow/devlog.md'
+	if (fs.existsSync(path.resolve(repo, notebook_path))) {
+		const text = notebook_writer.read_regular_file(notebook_writer.resolve_path(repo, notebook_path, 'notebook'), 'notebook').text
+		try {
+			ag_settings.status_region(text)
+			resume_intake.status_block(text)
+			if (!resume_intake.final_ask_span(text)) throw new Error('notebook has no open final Ask')
+		} catch (error) {
+			throw new Error(`notebook ${notebook_path} is invalid: ${error.message}; restore it from Git or a backup, or repair it explicitly while preserving existing history; init does not reconstruct established notebooks`)
+		}
+	}
 	const host = active_host_for_cli(repo)
-	const result = ag_settings.initialize_project({ repo_root: repo, explicit_host: host })
+	const result = ag_settings.initialize_project({ repo_root: repo, explicit_host: host, notebook_path })
 	update_ignore_file(repo)
 	install_hook.install({ cwd: repo, hosts: [host], quiet: true, say: () => {} })
 	const notebook = path.relative(repo, result.notebook_path || path.join(repo, result.config.switches['target-doc'])).split(path.sep).join('/')
@@ -727,12 +742,13 @@ const read_start_message = () => {
 const is_activation_only_message = message => ['godev', '/godev'].includes(String(message).trim().toLowerCase())
 
 const insert_start_message = (text, current_ask, message) => {
-	const { parse_fast_lane } = require('./fast-lane.js')
-	if (current_ask && !['', '+'].includes(current_ask.text.trim()) && parse_fast_lane(message) && !parse_fast_lane(current_ask.text)) {
+	const { parse_fast_lane, parse_skip_ag } = require('./fast-lane.js')
+	const selected = current_ask && [['fast_lane', parse_fast_lane], ['skip_ag', parse_skip_ag]].find(([, parse]) => parse(message) && !parse(current_ask.text))
+	if (selected && !['', '+'].includes(current_ask.text.trim())) {
 		const tail = text.slice(current_ask.body_start)
 		const record_start = tail.search(/^(?:---[ \t]*$|## \[(?:RUN|WIP)-\d+\])/mu)
 		const position = record_start < 0 ? text.length : current_ask.body_start + record_start
-		return { text: `${text.slice(0, position).trimEnd()}\n\n${notebook_writer.format_owner_input(message)}\n\n${text.slice(position)}`, inserted: true, reason: 'fast_lane_selected' }
+		return { text: `${text.slice(0, position).trimEnd()}\n\n${notebook_writer.format_owner_input(message)}\n\n${text.slice(position)}`, inserted: true, reason: `${selected[0]}_selected` }
 	}
 	if (current_ask === null || !['', '+'].includes(current_ask.text.trim())) return { text, inserted: false, reason: 'already_present' }
 	if (is_activation_only_message(message)) {
@@ -765,18 +781,21 @@ const manual_hook_instructions = host => {
 	return { capture, closeout, manual_capture: capture, manual_closeout: closeout }
 }
 
-const hook_result_for = (host, result) => result || (['codex', 'claude'].includes(host)
-	? { status: 'available', host }
+const hook_result_for = (host, result) => result || (host === 'claude'
+	? { status: 'available', host, prompt_capture: 'manual', instructions: install_hook.claude_capture_instructions() }
+	: host === 'codex' ? { status: 'available', host }
 	: { status: 'not_available', host, reason: 'no_host_hook_integration', instructions: manual_hook_instructions(host) })
 
-const start_result = ({ repo, host, host_family, notebook, notebook_text, intake, setup_result, message_result, provenance, git_identity, hook_result }) => ({
+const start_result = ({ repo, host, session_id, host_family, notebook, notebook_text, intake, setup_result, message_result, provenance, git_identity, hook_result, config_audit, compaction }) => ({
 	repository: repo,
 	notebook,
 	active_host: host,
+	...(host === 'claude' ? { session_id } : {}),
 	...(host_family ? { host_family } : {}),
 	git: git_identity,
 	next_run_id: next_run_id(notebook_text, intake.current_ask),
 	configuration: intake.configuration,
+	...(config_audit ? { config_audit } : {}),
 	setup_created: setup_result.created,
 	setup_created_files: setup_result.created_files,
 	hooks_restart_required: setup_result.changed_files.some(file => (host === 'codex' ? ['.codex/hooks.json'] : ['.claude/settings.local.json', '.claude/settings.json']).includes(file)),
@@ -790,11 +809,13 @@ const start_result = ({ repo, host, host_family, notebook, notebook_text, intake
 		ignored_local_host_settings: setup_result.changed_files.filter(file => ['.codex/hooks.json', '.claude/settings.local.json'].includes(file)),
 	},
 	message: { inserted: message_result.inserted, reason: message_result.reason },
+	...(compaction ? { compaction } : {}),
 	current_ask_identifier: intake.current_ask?.id || null,
 	current_ask: intake.current_ask,
 	changed_paths: intake.changed_paths,
 	stream_decision: intake.stream_decision,
 	...(intake.fast_lane ? { fast_lane: intake.fast_lane } : {}),
+	...(intake.skip_ag ? { skip_ag: intake.skip_ag } : {}),
 	required_next_rulebook: intake.stream_decision.required_next_rulebook,
 })
 
@@ -802,20 +823,24 @@ const start_public_result = result => ({
 	repository: result.repository,
 	notebook: result.notebook,
 	active_host: result.active_host,
+	...(result.active_host === 'claude' ? { session_id: result.session_id } : {}),
 	...(result.host_family ? { host_family: result.host_family } : {}),
 	local_timestamp: format_local_timestamp(),
 	configuration: result.configuration,
+	...(result.config_audit ? { config_audit: result.config_audit } : {}),
 	git: result.git,
 	next_run_id: result.next_run_id,
 	setup_created: result.setup_created,
 	setup_created_files: result.setup_created_files,
 	hooks_restart_required: result.hooks_restart_required,
-	...(result.hooks.status === 'not_available' ? { hooks: result.hooks } : {}),
+	...(result.hooks.status === 'not_available' || result.hooks.prompt_capture === 'manual' ? { hooks: result.hooks } : {}),
 	message: result.message,
+	...(result.compaction ? { compaction: result.compaction } : {}),
 	current_ask_identifier: result.current_ask_identifier,
 	changed_paths: result.changed_paths,
 	stream_decision: result.stream_decision,
 	...(result.fast_lane ? { fast_lane: result.fast_lane } : {}),
+	...(result.skip_ag ? { skip_ag: result.skip_ag } : {}),
 	required_next_rulebook: result.required_next_rulebook,
 })
 
@@ -826,27 +851,38 @@ const emit_start_result = (result, args, repo, log) => {
 			repository: result.repository,
 			notebook: result.notebook,
 			active_host: result.active_host,
+			...(result.active_host === 'claude' ? { session_id: result.session_id } : {}),
 			...(result.host_family ? { host_family: result.host_family } : {}),
 			configuration: result.configuration,
+			...(result.config_audit ? { config_audit: result.config_audit } : {}),
 			git: result.git,
 			setup_created: result.setup_created,
 			setup_created_files: result.setup_created_files,
 			hooks_restart_required: result.hooks_restart_required,
-			...(result.hooks.status === 'not_available' ? { hooks: result.hooks } : {}),
+			...(result.hooks.status === 'not_available' || result.hooks.prompt_capture === 'manual' ? { hooks: result.hooks } : {}),
 			message: result.message,
+			...(result.compaction ? { compaction: result.compaction } : {}),
 		},
 	}
 	if (args.json) return { dir: repo, json: start_public_result(result) }
 	log(`ready: ${repo}`)
 	log(`notebook: ${result.notebook}`)
+	if (result.compaction) log(result.compaction.message)
 	log(`setup: ${result.setup.created ? 'initialized' : 'already complete'}`)
 	log(`owner message: ${result.message.inserted ? 'recorded' : 'already present'}`)
+	if (result.hooks.prompt_capture === 'manual') {
+		log(`session: ${result.session_id}`)
+		log('hooks: Stop available; owner-message capture manual')
+		log(`manual capture: ${result.hooks.instructions.capture}`)
+	}
 	if (result.hooks.status === 'not_available') {
 		log('hooks: not_available')
 		log(`manual capture: ${result.hooks.instructions.capture}`)
 		log(`manual closeout: ${result.hooks.instructions.closeout}`)
 	}
 	log(`current Ask: ${result.current_ask_identifier || 'none'}`)
+	if (result.config_audit?.added?.length) log(`configuration added: ${result.config_audit.added.join(', ')}`)
+	for (const item of result.config_audit?.invalid || []) log(`configuration value needs approval: ${item.path}=${JSON.stringify(item.value)}; template suggests ${JSON.stringify(item.suggested)}`)
 	log(`stream decision: ${result.stream_decision.reason}`)
 	if (result.required_next_rulebook) log(`next rulebook: ${result.required_next_rulebook}`)
 	return { dir: repo }
@@ -857,7 +893,7 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 	if (args.help) { log(render_usage(80)); return 1 }
 	if (args.error) { log(`${args.error}\n\n${render_usage(80)}`); return 1 }
 	const notebook_owner = require('./notebook-owner')
-	notebook_owner.identity({ host: args.host, session: args.session })
+	const identity = notebook_owner.identity({ host: args.host, session: args.session })
 
 	const requested = path.resolve(cwd, args.repo)
 	const repo_path = real_path(requested)
@@ -867,25 +903,55 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 	const message = read_start_message()
 	const git_identity = top.ok ? repository_identity(repo) : { branch: null, head: null, state: 'unavailable' }
 	if (git_identity.error) throw new Error(git_identity.error)
+	let lock = acquire_start_lock(repo)
 	let configured_target = '.agentflow/devlog.md'
 	let config_file = path.join(repo, 'ag.json')
-	if (fs.existsSync(config_file)) {
-		const existing_config = ag_settings.load_config(config_file, { repo_root: repo, active_host: args.host, persist_migration: false, ...(args.host_family ? { host_family: args.host_family } : {}) })
-		configured_target = existing_config.switches['target-doc'] || configured_target
+	const audit_start_file = file => {
+		if (!fs.existsSync(file)) return null
+		const original = fs.readFileSync(file, 'utf8')
+		if (ag_settings.duplicate_json_key(original) !== null) return null
+		let parsed
+		try { parsed = JSON.parse(original) } catch { return null }
+		if (parsed?.['schema-version'] === 7) return null
+		const audit = ag_settings.audit_template(parsed, { repo_root: repo, active_host: args.host })
+		if (audit.added.length) {
+			if (fs.readFileSync(file, 'utf8') !== original) throw new Error('ag.json changed during startup audit; retry from the current file')
+			if (audit.config.switches && typeof audit.config.switches === 'object' && !Array.isArray(audit.config.switches)) audit.config.switches = Object.fromEntries(Object.entries(audit.config.switches).sort(([left], [right]) => left.localeCompare(right, 'en')))
+			ag_settings.write_text_atomic(file, `${JSON.stringify(audit.config, null, 2)}\n`)
+		}
+		return audit.added.length || audit.invalid.length ? { added: audit.added, invalid: audit.invalid } : null
 	}
-	if (top.ok && notebook_owner.linked_worktree(repo)) {
-		configured_target = stream_doc(repo, git_identity.branch)
-		if (!configured_target) throw new Error('stream notebook is missing for this worktree; restore its canonical notebook before intake')
-		config_file = ag_settings.resolve_config_path(repo, configured_target)
-		if (!fs.existsSync(config_file)) throw new Error('stream configuration is missing; restore its notebook/configuration pair before intake')
+	let config_audit = null
+	try {
+		const linked_stream = top.ok && notebook_owner.linked_worktree(repo)
+		config_audit = linked_stream || lock.existing ? null : audit_start_file(config_file)
+		if (fs.existsSync(config_file)) {
+			let existing_config
+			try { existing_config = ag_settings.load_config(config_file, { repo_root: repo, active_host: args.host, persist_migration: false, ...(args.host_family ? { host_family: args.host_family } : {}) }) }
+			catch (error) {
+				if (config_audit?.invalid?.length) error.message += `; template suggestions (change only with owner permission): ${config_audit.invalid.map(item => `${item.path}=${JSON.stringify(item.suggested)}`).join(', ')}`
+				throw error
+			}
+			configured_target = existing_config.switches['target-doc'] || configured_target
+		}
+		if (linked_stream) {
+			configured_target = stream_doc(repo, git_identity.branch)
+			if (!configured_target) throw new Error('stream notebook is missing for this worktree; restore its canonical notebook before intake')
+			config_file = ag_settings.resolve_config_path(repo, configured_target)
+			if (!fs.existsSync(config_file)) throw new Error('stream configuration is missing; restore its notebook/configuration pair before intake')
+			if (!lock.existing) config_audit = audit_start_file(config_file)
+		}
+		if (fs.existsSync(config_file) && !fs.existsSync(path.join(repo, configured_target))) throw new Error(`configured notebook ${configured_target} is missing; restore it or repair the pair explicitly`)
+	} catch (error) {
+		if (!lock.existing) release_start_lock(lock)
+		throw error
 	}
-	if (fs.existsSync(config_file) && !fs.existsSync(path.join(repo, configured_target))) throw new Error(`configured notebook ${configured_target} is missing; restore it or repair the pair explicitly`)
-	let lock = acquire_start_lock(repo)
 	if (lock.existing) {
 		const intake = resume_intake.collect_intake({ repo_root: repo, notebook_path: configured_target, active_host: args.host, ...(args.host_family ? { host_family: args.host_family } : {}), interrupted_start: true })
 		const result = start_result({
 			repo,
 			host: args.host,
+			session_id: identity.session,
 				notebook: intake.notebook,
 				notebook_text: fs.readFileSync(path.join(repo, intake.notebook), 'utf8'),
 				intake,
@@ -914,6 +980,7 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 				...(args.host_family ? { host_family: args.host_family } : {}),
 			})
 			: ag_settings.initialize_project({ repo_root: repo, explicit_host: args.host, ...(args.host_family ? { host_family: args.host_family } : {}) })
+		if (!config_audit) config_audit = audit_start_file(config_file)
 		const notebook = start_relative(repo, initialized.notebook_path || path.join(repo, initialized.config.switches['target-doc']))
 		const paths = start_snapshot_paths(repo, args.host, notebook)
 		const notebook_file = path.join(repo, notebook)
@@ -921,11 +988,13 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 		update_ignore_file(repo)
 		const hook_result = install_hook.install({ cwd: repo, hosts: [args.host], quiet: true, say: () => {} })
 		const setup_provenance = start_provenance({ repo, paths, before })
-		let message_result
+		let message_result, compaction
 		try {
 			let original = notebook_writer.read_regular_file(notebook_file, 'notebook')
 			notebook_owner.verify(ownership)
-			original = require('./notebook-compact').compact_locked({ root: repo, notebook, original, force: false }).snapshot
+			const compacted = require('./notebook-compact').compact_locked({ root: repo, notebook, original, ownership, force: false })
+			original = compacted.snapshot
+			if (compacted.blocked) compaction = { blocked: compacted.blocked, message: compacted.message }
 			const current = resume_intake.final_ask_span(original.text)
 			message_result = insert_start_message(original.text, current, message)
 			message_result.owner_message = message
@@ -933,6 +1002,7 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 			if (populated && populated.text !== '+') notebook_writer.capture_input_scope(repo, notebook, args.host, populated.id, { ownership, session: args.session })
 			if (message_result.inserted) {
 				notebook_writer.verify_notebook_unchanged(notebook_file, original)
+				notebook_owner.verify(ownership)
 				notebook_writer.atomic_replace(notebook_file, Buffer.from(message_result.text), original.mode)
 			}
 		} finally { notebook_writer.release_close_round_lock(input_lock); input_lock = null }
@@ -947,7 +1017,7 @@ const start_main = (argv, cwd, log, _ask, _width = 80) => {
 		release_start_lock(lock)
 		lock = null
 		const intake = resume_intake.collect_intake({ repo_root: repo, notebook_path: notebook, active_host: args.host, ...(args.host_family ? { host_family: args.host_family } : {}), bootstrap_provenance: provenance })
-		return emit_start_result(start_result({ repo, host: args.host, host_family: args.host_family, notebook, notebook_text: message_result.text, intake, setup_result, message_result, provenance, git_identity, hook_result: Array.isArray(hook_result) ? hook_result[0] : hook_result }), args, repo, log)
+		return emit_start_result(start_result({ repo, host: args.host, session_id: identity.session, host_family: args.host_family, notebook, notebook_text: message_result.text, intake, setup_result, message_result, provenance, git_identity, config_audit, compaction, hook_result: Array.isArray(hook_result) ? hook_result[0] : hook_result }), args, repo, log)
 	} finally {
 		if (input_lock !== null) notebook_writer.release_close_round_lock(input_lock)
 		if (lock !== null) release_start_lock(lock)
@@ -1422,6 +1492,7 @@ const close_execute = ({ repo, manifest, close_id, notebook_file, allowed_files,
 			}
 			try {
 				notebook_writer.verify_notebook_unchanged(notebook_file, source)
+				notebook_owner.verify(ownership, { root: repo, notebook: notebook_path, ask: manifest.ask, active: true })
 				notebook_writer.atomic_replace(notebook_file, candidate.content, current.mode)
 			} catch (error) {
 				try {
@@ -2671,7 +2742,37 @@ const close_main = (argv, cwd, log, _ask, _width = 80) => {
 
 // ---------- dispatch ----------
 
-const COMMANDS = { owner: (...args) => require('./notebook-owner.js').cli(...args), compact: (...args) => require('./notebook-compact.js').main(...args), skills: (...args) => require('./skills-audit.js').main(...args), start: start_main, close: close_main, init: init_main, new: new_main, finish: finish_main, cleanup: clean_main, clean: clean_main, merge: clean_main, ditch: ditch_main, uninstall: uninstall_main, setup: setup_main, hooks: hooks_main, settings: settings_main }
+const review_main = (argv, cwd, log) => {
+	let notebook
+	let host
+	for (let index = 0; index < argv.length; index += 1) {
+		const flag = argv[index]
+		if ((flag === '--notebook' || flag === '--host') && argv[index + 1] && !argv[index + 1].startsWith('--')) {
+			if (flag === '--notebook' && !notebook) notebook = argv[++index]
+			else if (flag === '--host' && !host) host = argv[++index]
+			else return log(`duplicate ${flag}`), 1
+			continue
+		}
+		return log('usage: agf review --notebook <path> [--host <id>]'), 1
+	}
+	if (!notebook || (host && !/^[a-z0-9][a-z0-9_-]{0,127}$/u.test(host))) return log('usage: agf review --notebook <path> [--host <safe-id>]'), 1
+	try {
+		const repo = fs.realpathSync(cwd)
+		const file = path.resolve(repo, notebook)
+		if (file === repo || !file.startsWith(repo + path.sep) || fs.realpathSync(file) !== file) throw Error('notebook must be a regular file inside the project')
+		const source = notebook_writer.read_regular_file(file, 'notebook')
+		const relative = path.relative(repo, file).split(path.sep).join('/')
+		const facts = completion_context.collect({ project_root: repo, notebook_path: relative, devlog_text: source.text, active_host: host || active_host_for_cli(repo) })
+		const decision = facts.review_decision
+		if (!decision || decision.error) throw Error(decision?.error || 'review decision is unavailable')
+		return { json: { ask: facts.current_ask, status: decision.status, reason: decision.reason, host_review_required: decision.status === 'skip-review' } }
+	} catch (error) {
+		log(`review precheck failed: ${sanitize_diagnostic(error.message)}`)
+		return 1
+	}
+}
+
+const COMMANDS = { owner: (...args) => require('./notebook-owner.js').cli(...args), compact: (...args) => require('./notebook-compact.js').main(...args), skills: (...args) => require('./skills-audit.js').main(...args), start: start_main, review: review_main, close: close_main, init: init_main, new: new_main, finish: finish_main, cleanup: clean_main, clean: clean_main, merge: clean_main, ditch: ditch_main, uninstall: uninstall_main, setup: setup_main, hooks: hooks_main, settings: settings_main }
 
 const main = (argv, cwd, log, ask, width = 80) => {
 	const cmd = COMMANDS[argv[0]]
@@ -2686,7 +2787,7 @@ const main = (argv, cwd, log, ask, width = 80) => {
 module.exports = {
 	kebab_case, is_key, next_key, parse_new_args, parse_clean_args, parse_finish_args, resolve_key,
 	parse_start_args, parse_close_args, render_usage, devlog_template, key_from_path, default_from_origin_head, shell_quote, command_chain,
-	is_yes, near_keys, stream_doc, host_from_root_status, active_host_for_cli, sanitize_diagnostic, git_timeout_ms, delivery_lock_path, write_all_sync, update_ignore_file, provision_env_links, init_main, start_main, close_main, new_main, finish_main, clean_main, ditch_main, uninstall_main, setup_main, hooks_main, settings_main, main,
+	is_yes, near_keys, stream_doc, host_from_root_status, active_host_for_cli, sanitize_diagnostic, git_timeout_ms, delivery_lock_path, write_all_sync, update_ignore_file, provision_env_links, init_main, start_main, review_main, close_main, new_main, finish_main, clean_main, ditch_main, uninstall_main, setup_main, hooks_main, settings_main, main,
 }
 
 if (require.main === module) {

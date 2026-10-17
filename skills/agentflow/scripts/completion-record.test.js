@@ -16,6 +16,25 @@ const fixture = () => {
   return { project_root, notebook_path: '.agentflow/devlog.md', workspace_dir: '.agentflow', ask: 'A-001' }
 }
 const draft = '## [FINAL REPORT]\n\n1. Done.\n\n```completion-metadata\nHost review: PASS — inspected the requested change.\n```\n'
+
+test('old reference retries preserve original spacing before Questions', () => {
+  for (const completed of [false, true]) {
+    const ctx = fixture()
+    const input = draft + '\n## Questions (batched — each with a suggested default)\n\n- None.\n'
+    records.publish_reply(input, ctx)
+    const info = records.location(ctx)
+    const reference = JSON.parse(fs.readFileSync(info.reference_file, 'utf8'))
+    reference.version = 1
+    fs.writeFileSync(info.reference_file, JSON.stringify(reference, null, 2) + '\n')
+    const raw = input.replace(/```completion-metadata\n[\s\S]*?```\n/u, '')
+    if (completed) fs.appendFileSync(path.join(ctx.project_root, ctx.notebook_path), '\n# ← Reply / A-001\n\n' + raw)
+    const before = fs.readFileSync(info.reference_file)
+    assert.equal(records.publish_reply(input, { ...ctx, read_only: true }), raw)
+    if (!completed) assert.equal(records.publish_reply(input, ctx), raw)
+    assert.deepEqual(fs.readFileSync(info.reference_file), before)
+    assert.equal(completion_metadata(raw, ctx).error, '')
+  }
+})
 const incident_xml = '<completion-metadata>\nHost review: PASS — inspected poem-zh-tw.md against the request; it contains one complete Traditional Chinese poem and no unrelated content.\nInformational document: poem-zh-tw.md — requested non-executable poem artifact.\n</completion-metadata>'
 const legacy_reply = ctx => {
   const info = records.location(ctx)
@@ -288,6 +307,16 @@ test('writer stamps, CRLF, separators and owner question answers preserve report
   assert.match(completion_metadata(rendered.replace('Done.', 'Other result.'), ctx).error, /match the Reply/)
 })
 
+test('removing completion evidence leaves one blank line before owner questions', () => {
+  const ctx = fixture()
+  const input = draft + '\n## Questions\n\n- None.\n'
+  const published = records.publish_reply(input, ctx)
+  assert.match(published, /1\. Done\.\n\n## Questions/u)
+  assert.doesNotMatch(published, /\n\n\n/u)
+  assert.equal(records.publish_reply(input, { ...ctx, read_only: true }), published)
+  assert.equal(completion_metadata(published, ctx).error, '')
+})
+
 test('Questions headings inside code examples remain bound to the report', () => {
   const ctx = fixture()
   const example = draft.replace('1. Done.', '1. Done.\n\n```text\n## Questions\nOriginal example\n```')
@@ -352,6 +381,6 @@ test('stream records with the same Ask ID do not collide with root records', () 
   const root_read = completion_metadata(records.publish_reply(draft, root), root)
   const stream_read = completion_metadata(records.publish_reply(draft, stream), stream)
   assert.equal(stream_read.error, '')
-  assert.match(stream_read.record_file, /\.tmp[\\/]features[\\/]red[\\/]A-001[\\/]completion\.json$/)
+  assert.match(stream_read.record_file.split(path.sep).join('/'), /\.tmp\/features\/red\/A-001\/completion.json$/)
   assert.notEqual(root_read.record_file, stream_read.record_file)
 })

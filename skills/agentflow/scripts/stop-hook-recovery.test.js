@@ -26,6 +26,13 @@ for (const host of ['codex', 'claude']) {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = spawnSync(process.execPath, [hook, '--host', host], { input, env, cwd: root, encoding: 'utf8' });
         assert.equal(result.status, 0, result.stderr);
+        if (host === 'claude') {
+          assert.equal(result.stdout, '');
+          assert.equal(result.stderr, '');
+          assert.equal(fs.readFileSync(file, 'utf8'), notebook);
+          assert.deepEqual(fs.readdirSync(path.dirname(file)), ['devlog.md']);
+          continue;
+        }
         const context = JSON.parse(result.stdout).hookSpecificOutput;
         assert.equal(context.hookEventName, 'UserPromptSubmit');
         assert.match(context.additionalContext, /not saved.*no open Ask/i);
@@ -45,6 +52,9 @@ for (const host of ['codex', 'claude']) {
       const file = path.join(root, '.agentflow/devlog.md');
       fs.mkdirSync(path.dirname(file));
       fs.writeFileSync(file, '# → Ask / A-044\n\n+\n');
+      const config = require('./ag-settings').make_template(host);
+      config.switches['notebook-ownership'] = 'on';
+      fs.writeFileSync(path.join(root, 'ag.json'), JSON.stringify(config));
       if (owned) {
         const env = { ...process.env };
         for (const name of ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CLAUDE_SESSION_ID', 'AGENTFLOW_SESSION_ID']) delete env[name];
@@ -60,6 +70,11 @@ for (const host of ['codex', 'claude']) {
       for (const prompt of ['godev', 'no-ag, fix this hook', 'hello']) {
         const result = spawnSync(process.execPath, [hook, '--host', host], { input: JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: 'repair-session', prompt }), env, cwd: root, encoding: 'utf8' });
         assert.equal(result.status, 0, result.stderr);
+        if (host === 'claude' || prompt.startsWith('no-ag')) {
+          assert.equal(result.stdout, '');
+          assert.deepEqual(snapshot(), before);
+          continue;
+        }
         const notice = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
         assert.match(notice, /not saved.*ownership/i);
         assert.match(notice, /Continue with the submitted request/);
@@ -84,13 +99,21 @@ for (const host of ['codex', 'claude']) {
       // A regular stdin descriptor keeps this size-boundary test independent of
       // synchronous pipe transfer in the process-isolated Node test runner.
       const input_file = path.join(root, 'hook-input.json');
-      fs.writeFileSync(input_file, JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: 'repair-session', prompt: fault === 'oversized input' ? 'x'.repeat(65537) : 'no-ag, repair intake' }));
+      fs.writeFileSync(input_file, JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: 'repair-session', prompt: fault === 'oversized input' ? 'x'.repeat(65537) : 'repair intake' }));
       const input_fd = fs.openSync(input_file, 'r');
       let result;
       try {
         result = spawnSync(process.execPath, [hook, '--host', host], { stdio: [input_fd, 'pipe', 'pipe'], env, cwd: root, encoding: 'utf8', timeout: 30000 });
       } finally { fs.closeSync(input_fd); }
       assert.equal(result.status, 0, result.stderr);
+      if (host === 'claude') {
+        assert.equal(result.stdout, '');
+        assert.equal(result.stderr, '');
+        if (fault !== 'notebook is a directory') assert.equal(fs.readFileSync(file, 'utf8'), notebook);
+        else assert.deepEqual(fs.readdirSync(file), []);
+        if (fault === 'lock contention') assert.equal(fs.readFileSync(file + '.close-round.lock', 'utf8'), 'existing lock\n');
+        return;
+      }
       const notice = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
       assert.match(notice, /capture did not complete/i);
       assert.match(notice, /Continue with the submitted request/);
@@ -102,7 +125,7 @@ for (const host of ['codex', 'claude']) {
 }
 
 for (const host of ['codex', 'claude']) {
-  test(`${host} reports uncertain capture after a post-save failure and preserves retry deduplication`, () => {
+  test(`${host} ${host === 'claude' ? 'ignores prompt events despite a post-save fault' : 'reports uncertain capture after a post-save failure and preserves retry deduplication'}`, () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agf-post-save-'));
     const file = path.join(root, '.agentflow/devlog.md');
     fs.mkdirSync(path.dirname(file));
@@ -115,6 +138,12 @@ for (const host of ['codex', 'claude']) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = spawnSync(process.execPath, ['--require', preload, hook, '--host', host], { input, env, cwd: root, encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr);
+      if (host === 'claude') {
+        assert.equal(result.stdout, '');
+        assert.equal(result.stderr, '');
+        assert.equal(fs.readFileSync(file, 'utf8'), '# → Ask / A-044\n\n+\n');
+        continue;
+      }
       const notice = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
       assert.match(notice, /may already be saved/);
       assert.equal(fs.readFileSync(file, 'utf8').split('+ unique saved instruction').length - 1, 1);

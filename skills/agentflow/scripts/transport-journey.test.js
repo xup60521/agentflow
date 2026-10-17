@@ -7,6 +7,16 @@ const path = require('node:path')
 const { spawnSync, execFileSync } = require('node:child_process')
 const test = require('node:test')
 
+const terminal_executable = command => {
+  const candidates = command.includes('/') ? [command] : (process.env.PATH || '').split(path.delimiter).map(directory => path.join(directory, command))
+  return candidates.some(file => {
+    try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); } catch { return false; }
+  })
+}
+const terminal_skip = process.platform === 'win32'
+  ? 'requires a Unix PTY; native Windows is not supported by this terminal fixture'
+  : ['/usr/bin/expect', 'tty'].every(terminal_executable) ? false : 'requires executable /usr/bin/expect and tty for this Unix PTY fixture'
+
 const wrapper = `const fs=require('node:fs'),cp=require('node:child_process');
 if(!process.stdin.isTTY||!process.stdout.isTTY)process.exit(90);
 process.stdout.write('Terminal: '+cp.spawnSync('tty',[],{stdio:[0,'pipe','pipe'],encoding:'utf8'}).stdout);
@@ -22,13 +32,13 @@ const terminal = (root, script, args, input = '') => {
     AGF_JOURNEY_NODE: process.execPath, AGF_JOURNEY_WRAPPER: wrapper,
     AGF_JOURNEY_ARGS: JSON.stringify(script === null ? args : [path.join(__dirname, script), ...args]), AGF_JOURNEY_INPUT: input,
   } })
-  assert.match(result.stdout, /Terminal: \/dev\/(?:tty|pts\/)/)
+  assert.match(result.stdout, /Terminal: \/dev\/(?:tt[^\s]+|pts\/\d+)/)
   assert.match(result.stdout, /Visible input:/)
   assert.match(result.stdout, new RegExp(`Process exit: ${result.status}`))
   return result
 }
 
-for (const git_mode of [true, false]) test(`real terminal portable host, policy changes, pending handoff and closeout in ${git_mode ? 'Git' : 'plain'} folder`, { skip: process.platform === 'win32' ? 'requires /usr/bin/expect and a POSIX terminal' : false }, () => {
+for (const git_mode of [true, false]) test(`real terminal portable host, policy changes, pending handoff and closeout in ${git_mode ? 'Git' : 'plain'} folder`, { skip: terminal_skip }, () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-transport-pty-')))
   if (git_mode) {
     for (const args of [['init', '-q', '-b', 'main'], ['config', 'user.name', 'PTY fixture'], ['config', 'user.email', 'pty@example.invalid']]) execFileSync('git', args, { cwd: root })

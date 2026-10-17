@@ -11,7 +11,7 @@
 const node_fs = require('node:fs');
 const node_path = require('node:path');
 const { lint_round, parse_devlog } = require('./round-linter');
-const { collect } = require('./completion-context');
+const { collect, no_ag_bypass, latest_owner_prompt } = require('./completion-context');
 
 const external_delegate_marker_pattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 
@@ -55,8 +55,23 @@ const main = () => {
     throw new Error('Stop hook requires --host codex, claude, or opencode');
   }
 
+  // Claude prompt events do not establish owner-message origin. Loaded older
+  // hooks must stay silent and leave notebook state untouched.
+  if (active_host === 'claude' && capturing_prompt) return 0;
+
   // CLAUDE_PROJECT_DIR is Claude-Code-only; every host passes cwd on stdin.
   const project_dir = (active_host === 'claude' ? process.env.CLAUDE_PROJECT_DIR : '') || input.cwd || process.cwd();
+  if (capturing_prompt) {
+    const opted_out = typeof input.prompt === 'string' && no_ag_bypass(input.prompt);
+    if (opted_out) return 0;
+  } else {
+    const prompt = typeof input.prompt === 'string' ? input.prompt : latest_owner_prompt(input.transcript_path, input.session_id);
+    if (prompt !== undefined) {
+      const opted_out = no_ag_bypass(prompt);
+      if (opted_out) return 0;
+    }
+  }
+
   let notebook_path = '.agentflow/devlog.md';
   let config_path = node_path.join(project_dir, 'ag.json');
   const project_name = node_path.basename(project_dir);
@@ -118,12 +133,14 @@ const main = () => {
     }
     const round = parse_devlog(node_fs.readFileSync(devlog_path, 'utf8')).rounds.at(-1);
     const fast_lane = require('./fast-lane.js').parse_fast_lane(round?.owner_text);
-    const route_notice = fast_lane ? ` Fast-lane ${fast_lane.state}: work directly without AG, delegation, new streams, external review, or pipeline approval/artifact requirements. Keep host self-review, necessary tests, trackers, timed WIP checkpoints, detailed reports, and integrity checks. ${fast_lane.state === 'pending' ? 'Wait for the task; leave this Ask open without a Reply or closeout.' : 'This applies through this task’s closeout, then expires.'}` : '';
+    const skip_ag = require('./fast-lane.js').parse_skip_ag(round?.owner_text);
+    const route_notice = fast_lane ? ` Fast-lane ${fast_lane.state}: work directly without AG, delegation, new streams, external review, or pipeline approval/artifact requirements. Keep host self-review, necessary tests, trackers, timed WIP checkpoints, detailed reports, and integrity checks. ${fast_lane.state === 'pending' ? 'Wait for the task; leave this Ask open without a Reply or closeout.' : 'This applies through this task’s closeout, then expires.'}` : skip_ag ? ` Skip-ag ${skip_ag.state}: skip the development pipeline and advisors for this Ask; retain normal logging, review, execution, integrity and closeout rules. ${skip_ag.state === 'pending' ? 'Wait for the task; leave this Ask open.' : 'This expires when the task closes.'}` : '';
     const capture_state = result.inserted ? 'was saved' : 'was already present; no duplicate was written'
     const session_notice = input.session_id ? ` Hook session: ${input.session_id}.` : ''
+    const compaction_notice = result.compaction ? ` ${result.compaction.message}` : ''
     process.stdout.write(JSON.stringify({ hookSpecificOutput: {
       hookEventName: 'UserPromptSubmit',
-      additionalContext: `The user's instruction ${capture_state} in ${notebook_path}, ${result.ask}.${session_notice} Read the current Ask and address all its instructions together. Do not record this hook notice as user input.${route_notice}`,
+      additionalContext: `The user's instruction ${capture_state} in ${notebook_path}, ${result.ask}.${session_notice} Read the current Ask and address all its instructions together. Do not record this hook notice as user input.${route_notice}${compaction_notice}`,
     } }) + '\n');
     return 0;
   }
@@ -131,6 +148,7 @@ const main = () => {
   const devlog_text = node_fs.readFileSync(devlog_path, 'utf8');
   const rounds = parse_devlog(devlog_text).rounds;
   if (rounds.length === 1 && ['', '+'].includes(rounds[0].ask_text.trim()) && !rounds[0].reply_text.trim() && !rounds[0].wip_text.trim()) return 0;
+  if (require('./closed-round').verified_closed_round(project_dir, notebook_path, active_host, devlog_text)) return 0;
   const context = collect({
     project_root: project_dir,
     notebook_path,

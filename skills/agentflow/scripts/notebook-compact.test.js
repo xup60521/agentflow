@@ -31,7 +31,7 @@ const fixture = (history = '', open = '+ current request\n') => {
 const closed = (id, text = 'finished') => `# → Ask / ${id}\n\n+ request\n\n# ← Reply / ${id}\n\n${text}\n\n## Questions\n\n- None.\n\n---\n\n`;
 const compact = (f, options = {}) => {
   const lock = writer.acquire_close_round_lock(f.file + '.close-round.lock');
-  try { return require('./notebook-compact').compact_locked({ root: f.root, notebook: f.notebook, original: writer.read_regular_file(f.file, 'notebook'), force: true, ...options }); }
+  try { return require('./notebook-compact').compact_locked({ root: f.root, notebook: f.notebook, original: writer.read_regular_file(f.file, 'notebook'), ownership: require('./notebook-owner').guard({ root: f.root, notebook: f.notebook, host: 'codex', session }), force: true, ...options }); }
   finally { writer.release_close_round_lock(lock); }
 };
 
@@ -47,24 +47,63 @@ test('a single open Ask above one MiB accepts another owner message without trun
   assert.equal(fs.existsSync(f.archive), false);
 });
 
+for (const force of [false, true]) for (const include_answered of [false, true]) for (const open of ['', '+ current request\n']) test(`latest completed round stays live (force=${force}, include_answered=${include_answered}, empty=${!open})`, () => {
+  const older = closed('A-001', 'old\n'.repeat(750));
+  const latest = closed('A-002', '最新 completed\r\n');
+  const f = fixture(older + latest, open);
+  const result = compact(f, { force, include_answered });
+  assert.deepEqual(result.rounds.map(round => round.id), ['A-001']);
+  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(older));
+  assert.ok(fs.readFileSync(f.file, 'utf8').endsWith(latest + '# → Ask / A-003\n\n' + open));
+  assert.equal(compact(f, { force, include_answered }).rounds.length, 0);
+});
+
+for (const force of [false, true]) test(`only completed round above byte threshold stays live (force=${force})`, () => {
+  const latest = closed('A-002', 'large '.repeat(140000));
+  const f = fixture(latest, '');
+  const before = fs.readFileSync(f.file);
+  assert.ok(before.length > 768 * 1024);
+  assert.equal(compact(f, { force, include_answered: true }).rounds.length, 0);
+  assert.deepEqual(fs.readFileSync(f.file), before);
+  assert.equal(fs.existsSync(f.archive), false);
+});
+
 test('compaction copies physical rounds byte-exactly and preserves the open Ask', () => {
   const history = closed('A-001', '繁體中文\r\n' + 'old\n'.repeat(1200)) + closed('A-002');
   const f = fixture(history);
   const before = fs.readFileSync(f.file);
   const result = compact(f);
-  assert.equal(result.rounds.length, 2);
-  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history));
+  assert.equal(result.rounds.length, 1);
+  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history.slice(0, history.indexOf('# → Ask / A-002'))));
   const after = fs.readFileSync(f.file, 'utf8');
   assert.ok(after.endsWith('# → Ask / A-003\n\n+ current request\n'));
   assert.match(after, /Archived eras: \.agentflow\/devlog.archive.md/);
   assert.ok(before.length > fs.statSync(f.file).size);
   assert.equal(compact(f).rounds.length, 0);
-  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history));
+  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history.slice(0, history.indexOf('# → Ask / A-002'))));
+});
+
+for (const lines of [500, 749, 750, 751]) test(`automatic compaction at ${lines} lines respects the 750-line threshold`, () => {
+  const f = fixture(closed('A-001') + closed('A-002'));
+  const base = fs.readFileSync(f.file, 'utf8');
+  const padding = 'done\n'.repeat(lines - (base.match(/\n/gu) || []).length);
+  const before = base.replace('# ← Reply / A-001\n', '# ← Reply / A-001\n' + padding);
+  fs.writeFileSync(f.file, before);
+  assert.equal((before.match(/\n/gu) || []).length, lines);
+  const result = compact(f, { force: false });
+  assert.equal(result.rounds.length, lines >= 750 ? 1 : 0);
+  if (lines < 750) {
+    assert.equal(fs.existsSync(f.archive), false);
+    assert.equal(fs.readFileSync(f.file, 'utf8'), before);
+  } else {
+    assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(closed('A-001').replace('# ← Reply / A-001\n', '# ← Reply / A-001\n' + padding)));
+    assert.ok(fs.readFileSync(f.file, 'utf8').endsWith('# → Ask / A-003\n\n+ current request\n'));
+  }
 });
 
 test('capture automatically compacts completed history over the line threshold', () => {
-  const history = closed('A-001', 'done\n'.repeat(1100));
-  const f = fixture(history);
+  const history = closed('A-001', 'done\n'.repeat(750));
+  const f = fixture(history + closed('A-002'));
   writer.append_input({ root: f.root, notebook: f.notebook, text: 'next direction', host: 'codex' });
   assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history));
   assert.match(fs.readFileSync(f.file, 'utf8'), /\+ next direction/);
@@ -79,13 +118,43 @@ test('compaction reports the answered round that conservatively blocks the prefi
   assert.match(result.message, /A-001|answered|live/i);
 });
 
+test('capture reports the retained history on new input and duplicate input', () => {
+  const pending = closed('A-001', 'done\n'.repeat(750) + '- ans: unresolved decision');
+  const f = fixture(pending + closed('A-002'));
+  for (const inserted of [true, false]) {
+    const result = writer.append_input({ root: f.root, notebook: f.notebook, text: 'continue', host: 'codex' });
+    assert.equal(result.inserted, inserted);
+    assert.deepEqual(result.compaction?.blocked, { ask: 'A-001', reason: 'answered-round-retained' });
+    assert.match(result.compaction.message, /answer recovery.*verify.*include-answered/iu);
+    assert.ok(fs.readFileSync(f.file, 'utf8').includes(pending));
+    assert.equal(fs.existsSync(f.archive), false);
+  }
+  const activation = writer.append_input({ root: f.root, notebook: f.notebook, text: 'godev', host: 'codex' });
+  assert.equal(activation.reason, 'activation_only');
+  assert.equal(activation.compaction.blocked.ask, 'A-001');
+});
+
+test('prompt hook exposes the compaction blocker without losing the owner request', () => {
+  const pending = closed('A-001', 'done\n'.repeat(750) + '-> ask: unresolved followup');
+  const f = fixture(pending + closed('A-002'));
+  const payload = { cwd: f.root, hook_event_name: 'UserPromptSubmit', session_id: session, prompt: 'continue' };
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'stop-hook.js'), '--host', 'codex'], { cwd: f.root, input: JSON.stringify(payload), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const notice = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+  assert.match(notice, /A-001.*answered-round-retained/iu);
+  assert.match(notice, /answer recovery.*verify.*include-answered/iu);
+  assert.match(fs.readFileSync(f.file, 'utf8'), /\+ continue/);
+  assert.ok(fs.readFileSync(f.file, 'utf8').includes(pending));
+  assert.equal(fs.existsSync(f.archive), false);
+});
+
 test('an explicit manual override archives answered rounds without changing their bytes', () => {
   const answered = `${closed('A-001')}## Questions\n\n- ans: keep this decision\n\n---\n\n`;
   const history = answered + closed('A-002');
   const f = fixture(history);
   const result = compact(f, { include_answered: true });
-  assert.equal(result.rounds.length, 2);
-  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history));
+  assert.equal(result.rounds.length, 1);
+  assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(history.slice(0, history.indexOf('# → Ask / A-002'))));
   assert.ok(fs.readFileSync(f.file, 'utf8').endsWith('# → Ask / A-003\n\n+ current request\n'));
 });
 
@@ -102,7 +171,7 @@ for (const invocation of ['canonical', 'case-alias', 'case-alias-capture']) test
   const recent = closed('A-002', invocation === 'case-alias-capture' ? 'done\n'.repeat(1100) : 'just completed');
   fs.writeFileSync(path.join(root, archive), prior);
   const status = settings.format_status({ project: 'stream archive', notebook, notebook_kind: 'stream', current_commit: 'fixture', tests_scenarios: 'none', config_path, host: 'portable', validation: 'validated', proven: 'fixture', open: 'none', next: 'compact', artifacts: 'none', archived_eras: archive, streams: [] });
-  fs.writeFileSync(path.join(root, notebook), status + '\n---\n\n' + recent + '# → Ask / A-003\n\n+ current task\n');
+  fs.writeFileSync(path.join(root, notebook), status + '\n---\n\n' + recent + closed('A-003', 'latest completed') + '# → Ask / A-004\n\n+ current task\n');
   const target = invocation === 'canonical' ? notebook : notebook.replace('topic.devlog.md', 'topic.DEVLOG.md');
   if (!fs.existsSync(path.join(root, target))) { t.skip('native case alias requires a case-insensitive volume'); return; }
   require('./fixtures/notebook-owner').adopt(root, notebook, 'portable', 'stream-archive');
@@ -145,7 +214,7 @@ test('compaction extends an archive stored under a case alias without respelling
 
 test('archive collision and symlink refuse compaction without changing live bytes', () => {
   for (const kind of ['collision', 'symlink']) {
-    const f = fixture(closed('A-001'));
+    const f = fixture(closed('A-001') + closed('A-002'));
     const before = fs.readFileSync(f.file);
     if (kind === 'collision') fs.writeFileSync(f.archive, closed('A-001', 'different'));
     else fs.symlinkSync(f.file, f.archive);
@@ -156,7 +225,7 @@ test('archive collision and symlink refuse compaction without changing live byte
 
 test('archive copied before an interrupted notebook replacement is safely reused', () => {
   const history = closed('A-001');
-  const f = fixture(history);
+  const f = fixture(history + closed('A-002'));
   const before = fs.readFileSync(f.file);
   const rename = fs.renameSync;
   try {
@@ -176,6 +245,19 @@ test('nonempty inline answers keep their round and later history live', () => {
   assert.ok(fs.readFileSync(f.file, 'utf8').includes(answered));
 });
 
+for (const marker of ['-> ask:', '\t -> ans:']) test(`startup retains an older inline ${marker.trim()} and the following history before recovery`, () => {
+  const pending = closed('A-001', 'done\n'.repeat(750) + marker + ' please handle this followup');
+  const suffix = closed('A-002');
+  const f = fixture(pending + suffix);
+  const result = spawnSync(process.execPath, [path.join(__dirname, 'agf.js'), 'start', '--repo', f.root, '--host', 'codex', '--message-stdin', '--json'], { cwd: f.root, input: 'godev\n', encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).current_ask_identifier, 'A-003');
+  assert.deepEqual(JSON.parse(result.stdout).compaction?.blocked, { ask: 'A-001', reason: 'answered-round-retained' });
+  assert.match(JSON.parse(result.stdout).compaction.message, /answer recovery.*verify.*include-answered/iu);
+  assert.ok(fs.readFileSync(f.file, 'utf8').includes(pending + suffix), 'the owner followup remains available to the recovery gate');
+  assert.equal(fs.existsSync(f.archive), false);
+});
+
 test('startup resumes a single large open Ask with bounded metadata', () => {
   const f = fixture('', '+ ' + 'large request '.repeat(90000) + '\n');
   const result = spawnSync(process.execPath, [path.join(__dirname, 'agf.js'), 'start', '--repo', f.root, '--host', 'codex', '--message-stdin', '--json'], { cwd: f.root, input: 'godev\n', encoding: 'utf8' });
@@ -187,14 +269,14 @@ test('startup resumes a single large open Ask with bounded metadata', () => {
 test('large existing archives stream without truncation before verified append', () => {
   const existing = closed('A-000', '繁體'.repeat(400000));
   const history = closed('A-001');
-  const f = fixture(history);
+  const f = fixture(history + closed('A-002'));
   fs.writeFileSync(f.archive, existing);
   compact(f);
   assert.deepEqual(fs.readFileSync(f.archive), Buffer.from(existing + history));
 });
 
 test('external notebook replacement during archive publication keeps the newer live bytes', () => {
-  const f = fixture(closed('A-001'));
+  const f = fixture(closed('A-001') + closed('A-002'));
   const newer = fs.readFileSync(f.file, 'utf8') + '\n+ external owner instruction\n';
   const rename = fs.renameSync;
   try {

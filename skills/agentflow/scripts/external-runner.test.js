@@ -20,7 +20,7 @@ node_test.test('external runner has no elapsed-time deadline by default', () => 
 node_test.test('external runner exposes a recoverable nested-worker violation without rejecting clone changes', no_process_table, async () => {
   const source = make_source_repo()
   const disposable = make_temp_dir('agentflow-external-runner-nested-')
-  const nested_executable = node_path.join(disposable, 'codex')
+  const nested_executable = node_path.join(disposable, process.platform === 'win32' ? 'codex.exe' : 'codex')
   node_fs.symlinkSync(process.execPath, nested_executable)
   try {
     const result = await runner.run_external_command(make_run_options(source, disposable, 'nested', {
@@ -46,7 +46,7 @@ const fixture_path = node_path.join(__dirname, 'fixtures', 'external-worker.js')
 node_test.test('default polling bounds process-table work and still contains a nested worker', no_process_table, async () => {
   const source = make_source_repo()
   const disposable = make_temp_dir('agentflow-external-runner-default-poll-')
-  const nested_executable = node_path.join(disposable, 'codex')
+  const nested_executable = node_path.join(disposable, process.platform === 'win32' ? 'codex.exe' : 'codex')
   node_fs.symlinkSync(process.execPath, nested_executable)
   try {
     const result = await runner.run_external_command(make_run_options(source, disposable, 'nested-hold', {

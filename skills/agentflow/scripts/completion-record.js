@@ -66,7 +66,7 @@ const read_reference = info => {
   const after = writer().read_regular_file(info.reference_file, 'completion reference')
   if (snapshot.hash !== after.hash || JSON.stringify(snapshot.identity) !== JSON.stringify(after.identity)) throw Error('completion reference changed while reading')
   const reference = JSON.parse(snapshot.text)
-  if (!reference || Object.keys(reference).sort().join(',') !== 'reply_sha256,sha256,version' || reference.version !== 1 || !/^[a-f0-9]{64}$/u.test(reference.sha256) || !/^[a-f0-9]{64}$/u.test(reference.reply_sha256) || encode(reference) !== snapshot.text) throw Error('completion reference is invalid')
+  if (!reference || Object.keys(reference).sort().join(',') !== 'reply_sha256,sha256,version' || ![1, 2].includes(reference.version) || !/^[a-f0-9]{64}$/u.test(reference.sha256) || !/^[a-f0-9]{64}$/u.test(reference.reply_sha256) || encode(reference) !== snapshot.text) throw Error('completion reference is invalid')
   return reference
 }
 
@@ -224,7 +224,15 @@ const publish_reply = (reply, options) => {
   const outside = completion_metadata(reply.slice(0, span.start) + reply.slice(span.end))
   if (metadata_field.test(outside.text)) throw Error('mixed completion metadata authority is ambiguous')
   const info = location(options)
-  const published = reply.slice(0, span.start) + reply.slice(span.end)
+  const raw_published = reply.slice(0, span.start) + reply.slice(span.end)
+  // Removing our block leaves one paragraph break, not an extra empty
+  // paragraph that hosts normalize when displaying the returned Reply.
+  const before = reply.slice(0, span.start)
+  const after = reply.slice(span.end)
+  const newline = reply.includes('\r\n') ? '\r\n' : '\n'
+  const published = after.trim()
+    ? before.replace(/(?:\r?\n[ \t]*)+$/u, '') + newline.repeat(2) + after.replace(/^(?:[ \t]*\r?\n)+/u, '')
+    : raw_published
   let record = { version: 1, notebook: info.notebook, ask: info.ask, created_at: format_local_timestamp(), metadata_text: span.text }
   let prior
   try { prior = writer().read_regular_file(info.file, 'completion record') } catch (error) { if (fs.existsSync(info.file) || fs.lstatSync(path.dirname(info.file), { throwIfNoEntry: false })?.isSymbolicLink()) throw error }
@@ -233,7 +241,12 @@ const publish_reply = (reply, options) => {
   if (prior_reference && !reference_current && (!prior || options.read_only || read_record(info, prior.hash).metadata_text !== span.text)) throw Error('completion record digest does not match its reference')
   if (prior) {
     const existing = read_record(info, prior.hash)
+    // Version 1 removed the fence without joining the surrounding paragraphs.
+    // The report digest excludes Questions, so it cannot distinguish this gap.
+    if (reference_current && prior_reference.version === 1 && existing.metadata_text === span.text && prior_reference.reply_sha256 === reply_digest(raw_published)) return raw_published
     if (reference_current && existing.metadata_text === span.text && prior_reference.reply_sha256 === reply_digest(published)) return published
+    // An older record whose report digest includes the original gap keeps it.
+    if (reference_current && existing.metadata_text === span.text && prior_reference.reply_sha256 === reply_digest(raw_published)) return raw_published
     const notebook = writer().read_regular_file(path.join(info.root, info.notebook), 'notebook').text
     const archive = archive_facts(info, prior.hash)
     const legacy_linked = notebook.includes('sha256:' + prior.hash) || archive.linked
@@ -252,16 +265,19 @@ const publish_reply = (reply, options) => {
   if (bytes.length > MAX_BYTES) throw Error('completion record is oversized')
   if (!prior || prior.hash !== digest(bytes)) {
     if (options.read_only) throw Error('completion records unavailable for retry')
+    require('./notebook-owner').verify(options.ownership, { root: options.project_root, notebook: options.notebook_path, ask: options.ask, active: true });
     safe_path(info.root, info.relative, true)
     const ignore = safe_path(info.root, path.posix.join(info.workspace, '.tmp', '.gitignore'))
     if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '*\n', { flag: 'wx', mode: 0o600 })
+    require('./notebook-owner').verify(options.ownership, { root: options.project_root, notebook: options.notebook_path, ask: options.ask, active: true });
     writer().atomic_replace(info.file, bytes, 0o600)
   }
   const hash = digest(bytes)
   read_record(info, hash)
-  const reference = { version: 1, sha256: hash, reply_sha256: reply_digest(published) }
+  const reference = { version: 2, sha256: hash, reply_sha256: reply_digest(published) }
   if (encode(reference) !== encode(prior_reference)) {
     if (options.read_only) throw Error('completion reference unavailable for retry')
+    require('./notebook-owner').verify(options.ownership, { root: options.project_root, notebook: options.notebook_path, ask: options.ask, active: true });
     writer().atomic_replace(info.reference_file, Buffer.from(encode(reference)), 0o600)
   }
   const verified_reference = read_reference(info)
@@ -284,7 +300,13 @@ const validate_review_record = (record, policy = {}) => {
   if (!allowed.includes(kind)) return `review executor ${kind} is not permitted`
   if (!text(record.reviewer) || !text(record.host) || !text(record.report)) return 'review needs reviewer, host and report identities'
   if (!Array.isArray(record.limitations) || !record.limitations.every(text)) return 'review limitations must be an explicit list'
-  if (!object(record.verdicts) || !['outcome', 'minimality', 'conformance'].every(key => record.verdicts[key] === 'PASS')) return 'review requires Outcome, Minimality and Conformance PASS'
+  if (record.purpose !== undefined && !['implementation', 'review-only'].includes(record.purpose)) return 'review purpose must be implementation or review-only'
+  if (record.purpose === 'review-only') {
+    if (record.completion !== 'complete') return 'review-only requires completed review work'
+    if (!/^[a-f0-9]{64}$/u.test(record.report_sha256 || '')) return 'review-only requires the original report SHA-256'
+    if (record.verdicts !== undefined) return 'review-only preserves findings in the report, without implementation verdict summaries'
+    if (record.source?.kind !== 'git') return 'review-only requires a captured Git scope baseline'
+  } else if (!object(record.verdicts) || !['outcome', 'minimality', 'conformance'].every(key => record.verdicts[key] === 'PASS')) return 'review requires Outcome, Minimality and Conformance PASS'
   const independence = record.independence
   if (!object(independence) || typeof independence.separate_reviewer !== 'boolean'
       || !['shared', 'fresh', 'unknown'].includes(independence.context)

@@ -379,7 +379,7 @@ const replace_status = (notebook_text, status_text) => {
   return `${notebook_text.slice(0, heading.index)}${status_text}${notebook_text.slice(region.body_end)}`;
 };
 
-const parse_close_document = (document, notebook_text, ask, root, host) => {
+const parse_close_document = (document, notebook_text, ask, root, host, session) => {
   if (document === null || typeof document !== 'object' || Array.isArray(document)) fail('close-round input must be a JSON object');
   for (const field of ['ask_id', 'runs', 'status_fields']) if (Object.hasOwn(document, field)) fail(`close-round unsupported field: ${field}`);
   const document_ask = document.ask;
@@ -389,7 +389,7 @@ const parse_close_document = (document, notebook_text, ask, root, host) => {
   if (typeof document.reply !== 'string') fail('close-round reply must be complete text');
   return {
     runs,
-    reply: render_reply(document.reply, ask, root, host || document.host || document.status?.host),
+    reply: render_reply(document.reply, ask, root, host || document.host || document.status?.host, session),
     status: close_status_text(document.status, notebook_text),
   };
 };
@@ -399,9 +399,9 @@ const render_record = (text, ask, kind, number) => {
   return `## [${kind}-${String(number).padStart(3, '0')}] ${kind === 'RUN' ? 'Event' : 'Checkpoint'} — ${format_local_timestamp()} (${ask})\n\n${text.trim()}\n`;
 };
 
-const render_reply = (text, ask, root = process.cwd(), host) => {
+const render_reply = (text, ask, root = process.cwd(), host, session) => {
   if (!text.trim()) return text;
-  const identity = require('./reply-identity').detect_reply_identity({ root, ...(host ? { host } : {}) });
+  const identity = require('./reply-identity').detect_reply_identity({ root, ...(host ? { host } : {}), session });
   if (/^[ \t]*(?:# ← Reply \/|## Reply \/)/mu.test(text)) {
     return text.replace(/^(#{1,2} (?:← )?Reply \/[^\n]+\r?\n)(?:\s*\* _[^\n]+_\r?\n)?/u, `$1\n* _${format_local_timestamp()} (${identity})_\n`);
   }
@@ -428,7 +428,7 @@ const prepare_close_candidate = ({ notebook, input, root = process.cwd(), notebo
   notebook_owner.verify(ownership, { root, notebook: notebook_path, ask, active: true });
 
   const inspected = inspect_notebook(notebook.text, ask);
-  const parsed = parse_close_document(document, notebook.text, ask, root, host);
+  const parsed = parse_close_document(document, notebook.text, ask, root, host, session);
   if (root && notebook_path) parsed.reply = require('./completion-record').publish_reply(parsed.reply, { project_root: root, notebook_path, ask, ownership });
   const runs = [];
   const run_texts = new Set();
@@ -556,6 +556,7 @@ const close_round = ({ root = process.cwd(), notebook: notebook_path, input, hos
     });
     const blocking = candidate_result.checks.filter(check => check.status === 'fail');
     if (blocking.length > 0) fail(`candidate completion check failed: ${blocking.map(check => `${check.id}: ${check.detail}`).join('; ')}`);
+    notebook_owner.verify(ownership, { root: repository_root, notebook: notebook_path, ask: document.ask, active: true });
     atomic_replace(notebook_file, prepared.candidate, notebook.mode);
     notebook_owner.release(ownership, read_regular_file(notebook_file, 'notebook').text);
   } finally {
@@ -738,6 +739,13 @@ const scope_path_identity = (root, relative) => {
 const snapshot_scope_paths = (root, paths) => Object.fromEntries(paths.map(relative =>
   [relative, scope_path_identity(root, relative)]).filter(([, identity]) => identity !== null));
 
+const same_scope_repository = (left, right) => {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  if (process.platform !== 'win32') return left === right;
+  try { return node_fs.realpathSync.native(left).toLowerCase() === node_fs.realpathSync.native(right).toLowerCase(); }
+  catch { return false; }
+};
+
 const close_delivery_path = (root, notebook, host, ask, close_id) => `${input_receipt_path(root, notebook, host)}.${ask}.${close_id}.close.json`;
 
 const save_close_scope = (root, notebook, host, ask, commit, notebook_hash, paths, { ownership, session, close_id } = {}) => {
@@ -761,7 +769,7 @@ const save_close_scope = (root, notebook, host, ask, commit, notebook_hash, path
       version: 1, repository: root, notebook, host, ask, close_id, commit, notebook_hash, paths: retained,
     }) + '\n'), 0o600);
   }
-  if (!saved.scope || saved.repository !== root || saved.notebook !== notebook || saved.host !== host || saved.scope.close) return;
+  if (!saved.scope || !same_scope_repository(saved.repository, root) || saved.notebook !== notebook || saved.host !== host || saved.scope.close) return;
   saved.scope.close = { commit, notebook_hash, paths: retained };
   atomic_replace(receipt.file, Buffer.from(JSON.stringify(saved) + '\n'), 0o600);
 };
@@ -799,7 +807,7 @@ const read_input_scope = (root, notebook, host, ask) => {
   try {
     const file = input_receipt_path(root, notebook, host);
     const saved = read_input_receipt(root, notebook, host);
-    if (saved.ask !== ask || saved.repository !== root || saved.notebook !== notebook || saved.host !== host) return null;
+    if (saved.ask !== ask || !same_scope_repository(saved.repository, root) || saved.notebook !== notebook || saved.host !== host) return null;
     const head = saved.scope?.head;
     if (head !== null && (!/^[0-9a-f]{40}$/u.test(head) || scope_git(root, ['merge-base', '--is-ancestor', head, 'HEAD']) === null)) return null;
     const paths = saved.scope.paths;
@@ -835,7 +843,7 @@ const read_close_scope = (root, notebook, host, ask, close_id) => {
     try { saved = JSON.parse(node_fs.readFileSync(close_delivery_path(root, notebook, host, ask, close_id), 'utf8')); }
     catch { saved = read_input_receipt(root, notebook, host); }
     const closed = saved?.version === 1 && saved?.close_id === close_id ? saved : saved?.scope?.close;
-    if (saved?.repository !== root || saved?.notebook !== notebook || saved?.host !== host || saved?.ask !== ask) return null;
+    if (!same_scope_repository(saved?.repository, root) || saved?.notebook !== notebook || saved?.host !== host || saved?.ask !== ask) return null;
     if (!closed || !/^[0-9a-f]{40}$/u.test(closed.commit) || !/^[0-9a-f]{64}$/u.test(closed.notebook_hash)) return null;
     const message = scope_git(root, ['log', '-1', '--format=%B', closed.commit]);
     if (!message || !new RegExp(`^Agentflow-Close-Id: ${close_id}$`, 'mu').test(message)) return null;
@@ -849,16 +857,20 @@ const read_close_scope = (root, notebook, host, ask, close_id) => {
 const append_input = ({ root = process.cwd(), notebook: notebook_path, text, message_id, host, session } = {}) => {
   if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 65536) fail('owner input must contain 1–65536 bytes');
   const repository_root = node_fs.realpathSync(root);
-  const file = resolve_path(repository_root, notebook_path, 'notebook');
+  let file = resolve_path(repository_root, notebook_path, 'notebook');
   const lock = acquire_close_round_lock(`${file}.close-round.lock`);
   try {
     let original = read_regular_file(file, 'notebook');
     const ownership = notebook_owner.guard({ root: repository_root, notebook: notebook_path, text: original.text, host, session });
     host = ownership.identity.host;
-    original = require('./notebook-compact').compact_locked({ root: repository_root, notebook: notebook_path, original, force: false }).snapshot;
+    // Preserve the stored filename when an owner submits a case or short-name alias.
+    file = resolve_path(ownership.root, ownership.notebook, 'notebook');
+    const compacted = require('./notebook-compact').compact_locked({ root: repository_root, notebook: notebook_path, original, ownership, force: false });
+    original = compacted.snapshot;
+    const capture_result = result => ({ ...result, ...(compacted.blocked ? { compaction: { blocked: compacted.blocked, message: compacted.message } } : {}) });
     const round = parse_devlog(original.text).rounds.at(-1);
     if (!round || round.reply_text.trim()) fail('owner input requires a current open Ask');
-    if (/^\/?godev$/iu.test(text.trim())) return { notebook: notebook_path, ask: round.id, inserted: false, reason: 'activation_only' };
+    if (/^\/?godev$/iu.test(text.trim())) return capture_result({ notebook: notebook_path, ask: round.id, inserted: false, reason: 'activation_only' });
     const id = node_crypto.createHash('sha256').update(String(message_id || '') + '\0' + text).digest('hex');
     const marker = `<!-- agentflow-input: ${id} -->`;
     // Plain list paragraphs keep pasted headings and dividers inside owner input.
@@ -869,7 +881,7 @@ const append_input = ({ root = process.cwd(), notebook: notebook_path, text, mes
     const prior = receipts?.data.entries[id];
     const delivered = prior && Number.isSafeInteger(prior.start) && prior.start >= 0
       && round.ask_text.slice(prior.start, prior.start + listed.length) === listed;
-    if (round.ask_text.includes(marker) || delivered || (!message_id && (ask_content.includes(`\n\n${listed}\n\n`) || round.ask_text.trim() === text.trim()))) return { notebook: notebook_path, ask: round.id, inserted: false, reason: 'already_present' };
+    if (round.ask_text.includes(marker) || delivered || (!message_id && (ask_content.includes(`\n\n${listed}\n\n`) || round.ask_text.trim() === text.trim()))) return capture_result({ notebook: notebook_path, ask: round.id, inserted: false, reason: 'already_present' });
     // Manual/startup capture may precede the hook's submission ID. Adopt an
     // unclaimed copy once; another real submission ID still records a repeat.
     if (receipts) {
@@ -880,7 +892,7 @@ const append_input = ({ root = process.cwd(), notebook: notebook_path, text, mes
           entry.start < start + listed.length && start < entry.start + (Number.isSafeInteger(entry.length) ? entry.length : Infinity))) continue;
         receipts.data.entries[id] = { start, length: listed.length };
         atomic_replace(receipts.file, Buffer.from(JSON.stringify(receipts.data) + '\n'), 0o600);
-        return { notebook: notebook_path, ask: round.id, inserted: false, reason: 'already_present' };
+        return capture_result({ notebook: notebook_path, ask: round.id, inserted: false, reason: 'already_present' });
       }
     }
     const ask_start = round.start + round.text.length - round.body.length;
@@ -895,8 +907,9 @@ const append_input = ({ root = process.cwd(), notebook: notebook_path, text, mes
       receipts.data.entries[id] = { start: parse_devlog(candidate).rounds.at(-1).ask_text.lastIndexOf(listed), length: listed.length };
       atomic_replace(receipts.file, Buffer.from(JSON.stringify(receipts.data) + '\n'), 0o600);
     }
+    notebook_owner.verify(ownership, { root: repository_root, notebook: notebook_path, ask: round.id, active: true });
     atomic_replace(file, Buffer.from(candidate.endsWith('\n') ? candidate : candidate + '\n'), original.mode);
-    return { notebook: notebook_path, ask: round.id, inserted: true, reason: 'owner_input_saved' };
+    return capture_result({ notebook: notebook_path, ask: round.id, inserted: true, reason: 'owner_input_saved' });
   } finally { release_close_round_lock(lock); }
 };
 
@@ -927,7 +940,8 @@ const append_wip = ({ root = process.cwd(), notebook: notebook_path, ask, input:
   try {
     lock_descriptor = acquire_lock(lock_path);
     verify_notebook_unchanged(notebook_file, notebook);
-    notebook_owner.guard({ root: repository_root, notebook: notebook_path, text: notebook.text, ask, host, session });
+    const ownership = notebook_owner.guard({ root: repository_root, notebook: notebook_path, text: notebook.text, ask, host, session });
+    notebook_owner.verify(ownership, { root: repository_root, notebook: notebook_path, ask, active: true });
     atomic_replace(notebook_file, candidate, notebook.mode);
     if (!input_stdin) consume_unchanged_draft(draft_file, draft);
   } finally {
@@ -963,7 +977,8 @@ const append_run = ({ root = process.cwd(), notebook: notebook_path, ask, input:
   try {
     lock_descriptor = acquire_lock(lock_path);
     verify_notebook_unchanged(notebook_file, notebook);
-    notebook_owner.guard({ root: repository_root, notebook: notebook_path, text: notebook.text, ask, host, session });
+    const ownership = notebook_owner.guard({ root: repository_root, notebook: notebook_path, text: notebook.text, ask, host, session });
+    notebook_owner.verify(ownership, { root: repository_root, notebook: notebook_path, ask, active: true });
     atomic_replace(notebook_file, candidate, notebook.mode);
     if (!input_stdin) consume_unchanged_draft(draft_file, draft);
   } finally {
@@ -988,7 +1003,7 @@ const append_reply = ({ root = process.cwd(), notebook: notebook_path, ask, inpu
 
   inspect_notebook(notebook.text, ask);
   parse_reply_draft(draft.text, ask);
-  draft.text = render_reply(draft.text, ask, repository_root, host);
+  draft.text = render_reply(draft.text, ask, repository_root, host, session);
   draft.content = Buffer.from(draft.text);
   parse_reply_draft(draft.text, ask);
   const newline = line_ending_for(notebook.content);
@@ -1032,6 +1047,7 @@ const append_reply = ({ root = process.cwd(), notebook: notebook_path, ask, inpu
     });
     const blocking = candidate_result.checks.filter(check => check.status === 'fail');
     if (blocking.length > 0) fail(`candidate completion check failed: ${blocking.map(check => `${check.id}: ${check.detail}`).join('; ')}`);
+    notebook_owner.verify(ownership, { root: repository_root, notebook: notebook_path, ask, active: true });
     atomic_replace(notebook_file, candidate, notebook.mode);
     notebook_owner.release(ownership, read_regular_file(notebook_file, 'notebook').text);
     if (!input_stdin) consume_unchanged_draft(draft_file, draft);

@@ -15,7 +15,7 @@ const { resolve_launch } = require('./executable-launch.js')
 const schema_version = 8
 const git_timeout_default_ms = 30_000
 const tier_names = Object.freeze(['best', 'better', 'basic', 'cheap'])
-const pipeline_role_names = Object.freeze(['requirements', 'codewalk', 'explore', 'spike', 'spec', 'implementation', 'security-scan', 'acceptance', 'cross-check', 'learn'])
+const pipeline_role_names = Object.freeze(['requirements', 'codewalk', 'explore', 'spike', 'spec', 'implementation', 'security-scan', 'acceptance', 'cross-check', 'learn', 'threeways'])
 const mandatory_pipeline_roles = Object.freeze(['requirements', 'spec', 'implementation', 'acceptance'])
 const pipeline_role_defaults = Object.freeze({
 	requirements: 'better',
@@ -28,16 +28,18 @@ const pipeline_role_defaults = Object.freeze({
 	acceptance: 'better',
 	'cross-check': 'better',
 	learn: 'basic',
+	threeways: 'better',
 })
-const switch_names = Object.freeze(['target-doc', 'workspace-dir', 'cli-provider', 'auto-reply', 'log-verbosity', 'inline-reply', 'lang', 'streams', 'ask-names', 'allow-ag', 'large-work-minutes', 'git-timeout-ms', 'allowed-worker', 'review-policy', 'completion-cleanup', 'completion-cleanup-interval-days'])
-const optional_switch_names = Object.freeze(['completion-cleanup', 'completion-cleanup-interval-days', 'log-verbosity', 'inline-reply', 'git-timeout-ms'])
+const switch_names = Object.freeze(['target-doc', 'workspace-dir', 'cli-provider', 'auto-reply', 'away-gates', 'log-verbosity', 'inline-reply', 'notebook-ownership', 'lang', 'streams', 'ask-names', 'allow-ag', 'large-work-minutes', 'git-timeout-ms', 'allowed-worker', 'review-policy', 'completion-cleanup', 'completion-cleanup-interval-days'])
+const optional_switch_names = Object.freeze(['completion-cleanup', 'completion-cleanup-interval-days', 'log-verbosity', 'inline-reply', 'notebook-ownership', 'git-timeout-ms', 'away-gates'])
 const legacy_switch_names = Object.freeze(['metrics'])
 const completion_cleanup_defaults = Object.freeze({ 'completion-cleanup': 'off', 'completion-cleanup-interval-days': 7 })
-const notebook_control_defaults = Object.freeze({ 'log-verbosity': 'all', 'inline-reply': 'off' })
+const notebook_control_defaults = Object.freeze({ 'log-verbosity': 'all', 'inline-reply': 'off', 'notebook-ownership': 'off' })
 const notebook_controls = (config = {}) => {
 	const controls = Object.fromEntries(Object.entries(notebook_control_defaults).map(([key, fallback]) => [key, has_own(config.switches || {}, key) ? config.switches[key] : fallback]))
-	if (!['off', 'wip', 'all'].includes(controls['log-verbosity'])) throw new SettingsError('log-verbosity must be off, wip, or all')
-	if (!['off', 'on'].includes(controls['inline-reply'])) throw new SettingsError('inline-reply must be off or on')
+	if (!['off', 'wip', 'all'].includes(controls['log-verbosity'])) controls['log-verbosity'] = notebook_control_defaults['log-verbosity']
+	if (!['off', 'on'].includes(controls['inline-reply'])) controls['inline-reply'] = notebook_control_defaults['inline-reply']
+	if (!['off', 'on'].includes(controls['notebook-ownership'])) throw new SettingsError('notebook-ownership must be off or on')
 	return controls
 }
 const read_notebook_controls = (repo_root, notebook_path) => {
@@ -162,22 +164,24 @@ const host_template_values = {
   codex: {
     'schema-version': schema_version,
     switches: {
+      'allow-ag': 'on',
+      'allowed-worker': ['external', 'internal', 'host'],
+      'ask-names': 'on',
+      'auto-reply': 'off',
+      'away-gates': 'on',
+      'cli-provider': 'on',
+      'completion-cleanup': completion_cleanup_defaults['completion-cleanup'],
+      'completion-cleanup-interval-days': completion_cleanup_defaults['completion-cleanup-interval-days'],
+      'git-timeout-ms': git_timeout_default_ms,
+      'inline-reply': notebook_control_defaults['inline-reply'],
+      lang: 'en',
+      'large-work-minutes': 120,
+      'log-verbosity': notebook_control_defaults['log-verbosity'],
+      'notebook-ownership': notebook_control_defaults['notebook-ownership'],
+      'review-policy': 'prefer-independent',
+      streams: 'ask',
       'target-doc': '.agentflow/devlog.md',
       'workspace-dir': '.agentflow',
-      'cli-provider': 'on',
-      'auto-reply': 'off',
-      ...notebook_control_defaults,
-      lang: 'en',
-      streams: 'ask',
-      'ask-names': 'on',
-      'allow-ag': 'on',
-      'large-work-minutes': 120,
-      'git-timeout-ms': git_timeout_default_ms,
-      'allowed-worker': ['external', 'internal', 'host'],
-      'review-policy': 'prefer-independent',
-      'completion-cleanup': completion_cleanup_defaults['completion-cleanup'],
-      'completion-cleanup-interval-days':
-        completion_cleanup_defaults['completion-cleanup-interval-days'],
     },
     'pipeline-roles': pipeline_role_defaults,
     'external-workers': [
@@ -187,10 +191,10 @@ const host_template_values = {
         priority: 3,
         family: 'codex',
         tiers: {
-          best: 'gpt-6-astra/xhigh',
-          better: 'gpt-5.6-sol/low',
-          basic: 'gpt-5.6-luna/xhigh',
-          cheap: 'gpt-5.6-luna/low',
+          "best": "gpt-6-astra/medium",
+					"better": "gpt-6.1-sol/high",
+					"basic": "gpt-6.1-sol/low",
+					"cheap": "gpt-6-luna/high"
         },
       },
       {
@@ -199,10 +203,10 @@ const host_template_values = {
         priority: 3,
         family: 'claude',
         tiers: {
-          best: 'claude-opus-5/high',
-          better: 'claude-opus-4-6/high',
-          basic: 'claude-sonnet-5/high',
-          cheap: 'haiku/high',
+          "best": "claude-opus-5-5/xhigh",
+					"better": "claude-opus-5-5/high",
+					"basic": "claude-sonnet-5-5/high",
+					"cheap": "haiku/high"
         },
       },
     ],
@@ -210,22 +214,24 @@ const host_template_values = {
   claude: {
     'schema-version': schema_version,
     switches: {
+      'allow-ag': 'on',
+      'allowed-worker': ['external', 'internal', 'host'],
+      'ask-names': 'on',
+      'auto-reply': 'off',
+      'away-gates': 'off',
+      'cli-provider': 'on',
+      'completion-cleanup': completion_cleanup_defaults['completion-cleanup'],
+      'completion-cleanup-interval-days': completion_cleanup_defaults['completion-cleanup-interval-days'],
+      'git-timeout-ms': git_timeout_default_ms,
+      'inline-reply': notebook_control_defaults['inline-reply'],
+      lang: 'en',
+      'large-work-minutes': 120,
+      'log-verbosity': notebook_control_defaults['log-verbosity'],
+      'notebook-ownership': notebook_control_defaults['notebook-ownership'],
+      'review-policy': 'prefer-independent',
+      streams: 'ask',
       'target-doc': '.agentflow/devlog.md',
       'workspace-dir': '.agentflow',
-      'cli-provider': 'on',
-      'auto-reply': 'off',
-      ...notebook_control_defaults,
-      lang: 'en',
-      streams: 'ask',
-      'ask-names': 'on',
-      'allow-ag': 'on',
-      'large-work-minutes': 120,
-      'git-timeout-ms': git_timeout_default_ms,
-      'allowed-worker': ['external', 'internal', 'host'],
-      'review-policy': 'prefer-independent',
-      'completion-cleanup': completion_cleanup_defaults['completion-cleanup'],
-      'completion-cleanup-interval-days':
-        completion_cleanup_defaults['completion-cleanup-interval-days'],
     },
     'pipeline-roles': pipeline_role_defaults,
     'external-workers': [
@@ -235,10 +241,10 @@ const host_template_values = {
         priority: 3,
         family: 'claude',
         tiers: {
-          best: 'claude-opus-5/high',
-          better: 'claude-opus-4-6/high',
-          basic: 'claude-sonnet-5/high',
-          cheap: 'haiku/high',
+          "best": "claude-opus-5-5/xhigh",
+					"better": "claude-opus-5-5/high",
+					"basic": "claude-sonnet-5-5/high",
+					"cheap": "haiku/high"
         },
       },
       {
@@ -247,10 +253,10 @@ const host_template_values = {
         priority: 3,
         family: 'codex',
         tiers: {
-          best: 'gpt-6-astra/xhigh',
-          better: 'gpt-5.6-sol/low',
-          basic: 'gpt-5.6-luna/xhigh',
-          cheap: 'gpt-5.6-luna/low',
+          "best": "gpt-6-astra/medium",
+					"better": "gpt-6.1-sol/high",
+					"basic": "gpt-6.1-sol/low",
+					"cheap": "gpt-6-luna/high"
         },
       },
     ],
@@ -548,9 +554,10 @@ const pipeline_profile_eligible = (config, profile, active_host = '') => {
 }
 
 const validate_pipeline_roles = (config, warnings, errors, options = {}) => {
-	if (!check_exact_object(config['pipeline-roles'], pipeline_role_names, 'configuration.pipeline-roles', errors, warnings)) return
+	if (!check_exact_object(config['pipeline-roles'], pipeline_role_names.filter(role => role !== 'threeways'), 'configuration.pipeline-roles', errors, warnings, ['threeways'])) return
 	for (const role of pipeline_role_names) {
-		const tier = config['pipeline-roles'][role]
+		const tier = role === 'threeways' ? threeways_tier(config) : config['pipeline-roles'][role]
+		if (role === 'threeways' && tier === 'off') { errors.push('configuration.pipeline-roles.threeways: off is not supported'); continue }
 		if (tier === 'off') {
 			if (mandatory_pipeline_roles.includes(role)) warnings.push(`warning: pipeline-roles.${role}=off; the full pipeline is unavailable`)
 			continue
@@ -666,8 +673,10 @@ const validate_switches = (config, options, expected_switches, provider_values, 
 	const legal_switches = {
 		'cli-provider': provider_values,
 		'auto-reply': ['on', 'off'],
+		'away-gates': ['on', 'off'],
 		'log-verbosity': ['off', 'wip', 'all'],
 		'inline-reply': ['on', 'off'],
+		'notebook-ownership': ['on', 'off'],
 		streams: ['ask', 'always', 'off'],
 		'ask-names': ['on', 'off'],
 		'allow-ag': ['on', 'off', 'ask'],
@@ -712,6 +721,65 @@ const validate_current_config = (config, options = {}) => {
 }
 
 const validate_config = (config, options = {}) => validate_current_config(config, options)
+
+const safe_start_fallbacks = Object.freeze(['ask-names', 'git-timeout-ms', 'inline-reply', 'lang', 'large-work-minutes', 'log-verbosity'])
+const audit_template = (config, options = {}) => {
+	const template = make_template(options.active_host || 'codex')
+	const merged = clone_value(config)
+	if (!is_plain_object(config)) return { config: merged, runtime: merged, added: [], invalid: [] }
+	const added = []
+	const fill = (current, defaults, prefix = '') => {
+		if (!is_plain_object(current) || !is_plain_object(defaults)) return
+		for (const [key, value] of Object.entries(defaults)) {
+			const path = prefix ? `${prefix}.${key}` : key
+			if (!has_own(current, key)) {
+				current[key] = clone_value(value)
+				added.push(path)
+			} else if (is_plain_object(value)) fill(current[key], value, path)
+		}
+	}
+	fill(merged, template)
+	const validation = validate_config(merged, { ...options, check_executables: false })
+	const role_probe = clone_value(merged)
+	if (is_plain_object(role_probe.switches)) role_probe.switches = clone_value(template.switches)
+	role_probe['external-workers'] = clone_value(template['external-workers'])
+	const role_errors = validate_config(role_probe, { ...options, check_executables: false }).errors
+	const invalid = []
+	for (const [section, defaults] of [['switches', template.switches], ['pipeline-roles', template['pipeline-roles']]]) {
+		if (!is_plain_object(config[section])) continue
+		for (const [key, suggested] of Object.entries(defaults)) {
+			if (!has_own(config[section], key)) continue
+			const path = `${section}.${key}`
+			const errors = section === 'pipeline-roles' ? role_errors : validation.errors
+			if (errors.some(error => error.includes(path))) invalid.push({ path, value: config[section][key], suggested })
+		}
+	}
+	if (has_own(config, 'schema-version') && config['schema-version'] !== schema_version) invalid.push({ path: 'schema-version', value: config['schema-version'], suggested: schema_version })
+	if (has_own(config, 'external-workers') && !Array.isArray(config['external-workers'])) invalid.push({ path: 'external-workers', value: config['external-workers'], suggested: template['external-workers'] })
+	else if (Array.isArray(config['external-workers'])) {
+		const seen = new Set()
+		for (const error of validation.errors) {
+			const match = /^Invalid external-workers\[(\d+)\](?:\.([^:]+))?:/u.exec(error)
+			if (!match) continue
+			const index = Number(match[1])
+			const current_profile = config['external-workers'][index]
+			const default_profile = template['external-workers'][index]
+			if (!is_plain_object(current_profile) || !default_profile || current_profile.id !== default_profile.id) continue
+			const field = match[2] || ''
+			const path = `external-workers[${index}]${field ? `.${field}` : ''}`
+			if (seen.has(path)) continue
+			const parts = field.replace(/\[(\d+)\]/gu, '.$1').split('.').filter(Boolean)
+			const at = (object, keys) => keys.reduce((value, key) => value?.[key], object)
+			const suggested = at(default_profile, parts)
+			if (suggested === undefined) continue
+			invalid.push({ path, value: at(current_profile, parts), suggested })
+			seen.add(path)
+		}
+	}
+	const runtime = clone_value(merged)
+	for (const entry of invalid) if (entry.path.startsWith('switches.') && safe_start_fallbacks.includes(entry.path.slice(9))) runtime.switches[entry.path.slice(9)] = clone_value(entry.suggested)
+	return { config: merged, runtime, added: added.sort(), invalid }
+}
 
 const assert_valid_config = (config, options = {}) => {
 	const result = validate_config(config, options)
@@ -917,20 +985,23 @@ const read_json_config = (config_path, options = {}) => {
 		migrated = true
 	}
 
+	const initial_validation = validate_config(config, { ...options, repo_root: options.repo_root, check_executables: false })
+	const runtime_audit = !initial_validation.valid && !options.strict_values ? audit_template(config, { ...options, active_host: options.active_host || 'codex' }) : null
+	const runtime_config = runtime_audit && runtime_audit.added.length === 0 ? runtime_audit.runtime : config
 	try {
-		const schema_validation = validate_config(config, { ...options, repo_root: options.repo_root, check_executables: false })
+		const schema_validation = runtime_config === config ? initial_validation : validate_config(runtime_config, { ...options, repo_root: options.repo_root, check_executables: false })
 		if (!schema_validation.valid) throw error_from(schema_validation.errors.join('; '), schema_validation.errors, schema_validation.warnings, 'AG_CONFIG_INVALID')
 	} catch (error) {
 		if (error instanceof SettingsError && error.code === 'AG_CONFIG_WRITE') throw error
 		throw new SettingsError(`${error.message}; ${established_config_repair(config_path, options.repo_root)}`, { code: error.code || 'AG_CONFIG_INVALID' })
 	}
 	const active_host = options.active_host || detect_host(options)
-	assert_valid_config(config, { ...options, active_host })
+	assert_valid_config(runtime_config, { ...options, active_host })
 	if (migrated && options.persist_migration !== false) {
 		const serialized = JSON.stringify(config, null, 2) + '\n'
 		write_text_atomic(config_path, serialized, options)
 	}
-	return config
+	return runtime_config
 }
 
 const load_config = read_json_config
@@ -972,11 +1043,12 @@ const write_text_atomic = (file_path, text, options = {}) => {
 
 const canonical_config = config => ({
 	'schema-version': config['schema-version'],
-	switches: {
+	switches: Object.fromEntries(Object.entries({
 		'target-doc': config.switches['target-doc'],
 		...(has_own(config.switches, 'workspace-dir') ? { 'workspace-dir': config.switches['workspace-dir'] } : {}),
 		'cli-provider': config.switches['cli-provider'],
 		'auto-reply': config.switches['auto-reply'],
+		...(has_own(config.switches, 'away-gates') ? { 'away-gates': config.switches['away-gates'] } : {}),
 		...Object.fromEntries(Object.keys(notebook_control_defaults).filter(key => has_own(config.switches, key)).map(key => [key, config.switches[key]])),
 		lang: config.switches.lang,
 		streams: config.switches.streams,
@@ -988,8 +1060,8 @@ const canonical_config = config => ({
 		'review-policy': config.switches['review-policy'],
 		...(has_own(config.switches, 'completion-cleanup') ? { 'completion-cleanup': config.switches['completion-cleanup'] } : {}),
 		...(has_own(config.switches, 'completion-cleanup-interval-days') ? { 'completion-cleanup-interval-days': config.switches['completion-cleanup-interval-days'] } : {}),
-	},
-	'pipeline-roles': Object.fromEntries(pipeline_role_names.map(role => [role, config['pipeline-roles'][role]])),
+	}).sort(([left], [right]) => left.localeCompare(right, 'en'))),
+	'pipeline-roles': Object.fromEntries(pipeline_role_names.map(role => [role, role === 'threeways' ? threeways_tier(config) : config['pipeline-roles'][role]])),
 	'external-workers': config['external-workers'].map(profile => ({
 		id: profile.id,
 		command: [...profile.command],
@@ -1232,7 +1304,8 @@ const carry_forward_card = ({ repo_root, old_notebook, new_notebook, fs_api = no
 	const owner = require('./notebook-owner')
 	const parser = require('./round-linter').parse_devlog
 	const incoming = parser(body).rounds.at(-1)
-	if (parser(current).rounds.length) owner.guard({ root: repo_root, notebook: new_notebook, text: current, host, session })
+	const ownership = parser(current).rounds.length ? owner.guard({ root: repo_root, notebook: new_notebook, text: current, host, session }) : null
+	if (ownership) owner.verify(ownership, { root: repo_root, notebook: new_notebook, active: true })
 	else if (incoming) owner.guard({ root: repo_root, notebook: new_notebook, text: `# → Ask / ${incoming.id}\n\n+\n`, host, session })
 	else owner.identity({ host, session })
 	const separator = current.endsWith('\n') ? '\n' : '\n\n'
@@ -1294,6 +1367,13 @@ const rename_target_document_locked = (options = {}) => {
 		throw new SettingsError(`configuration target-doc=${config.switches['target-doc']} does not match the target-document rename`, { code: 'AG_RENAME_SCOPE' })
 	}
 	const old_config_text = fs_api.readFileSync(source_config_path, 'utf8')
+	const destination_config_text = fs_api.existsSync(new_config_path) ? fs_api.readFileSync(new_config_path, 'utf8') : null
+	const verify_rename_configuration = () => {
+		for (const [file, expected] of [[source_config_path, old_config_text], [new_config_path, destination_config_text]]) {
+			const actual = fs_api.existsSync(file) ? fs_api.readFileSync(file, 'utf8') : null
+			if (actual !== expected) throw new SettingsError('target-document rename configuration changed between commits; retry with the current configuration', { code: 'AG_RENAME_CONFIG_CHANGED' })
+		}
+	}
 	const status_source_path = resuming ? new_abs : old_abs
 	const status_source = fs_api.readFileSync(status_source_path, 'utf8')
 	const source_status_validation = validate_status_projection(status_source)
@@ -1332,6 +1412,7 @@ const rename_target_document_locked = (options = {}) => {
 	if (!resuming) try {
 		fs_api.mkdirSync(node_path.dirname(new_abs), { recursive: true })
 		if (fs_api.existsSync(old_archive_abs)) fs_api.mkdirSync(node_path.dirname(new_archive_abs), { recursive: true })
+		if (options.ownership) require('./notebook-owner').verify(options.ownership, { root: repo_root, notebook: old_notebook, active: true })
 		git_run(['mv', '--', old_notebook, new_notebook])
 		if (options.ownership) options.ownership = require('./notebook-owner').relocate(options.ownership, new_notebook)
 		if (fs_api.existsSync(old_archive_abs)) git_run(['mv', '--', old_archive, new_archive])
@@ -1346,9 +1427,12 @@ const rename_target_document_locked = (options = {}) => {
 		const moved_status = update_renamed_status(fs_api.readFileSync(new_abs, 'utf8'), old_notebook, new_notebook, notebook_kind, new_config_rel, active_host, date)
 		const moved_status_validation = validate_status_projection(moved_status)
 		if (!moved_status_validation.valid) throw new SettingsError(`target-document rename produced an invalid STATUS: ${moved_status_validation.errors.join('; ')}`, { code: 'AG_RENAME_STATUS' })
+		verify_rename_configuration()
 		fs_api.writeFileSync(new_abs, moved_status, 'utf8')
 		moved_config = copy_for_notebook(config, new_notebook, { ...options, repo_root, active_host })
+		verify_rename_configuration()
 		write_config_atomic(new_config_path, moved_config, { ...options, repo_root, active_host })
+		if (options.ownership) require('./notebook-owner').verify(options.ownership, { root: repo_root, notebook: new_notebook, active: true })
 		if (old_config_path !== new_config_path && fs_api.existsSync(old_config_path)) fs_api.unlinkSync(old_config_path)
 		if (!fs_api.existsSync(old_abs)) fs_api.writeFileSync(old_abs, `Moved to: ${new_notebook} — write your asks there.\n`, 'utf8')
 		else if (forwarding_card_target(fs_api.readFileSync(old_abs, 'utf8')) !== new_notebook) throw new SettingsError('the old notebook path is not the expected forwarding card', { code: 'AG_RENAME_INCOMPLETE' })
@@ -1415,7 +1499,7 @@ const rename_target_document = (options = {}) => {
 		const workspace = node_fs.existsSync(old_config) ? JSON.parse(node_fs.readFileSync(old_config, 'utf8')).switches?.['workspace-dir'] : undefined
 		const source_text = node_fs.readFileSync(node_path.join(repo_root, source), 'utf8')
 		const source_rounds = require('./round-linter').parse_devlog(source_text).rounds
-		const source_owner = owner.read(owner.location({ root: repo_root, notebook: source, workspace }))
+		const source_owner = source_rounds.length ? null : owner.read(owner.location({ root: repo_root, notebook: source, workspace, record_aware: true }))
 		if (!source_rounds.length && source_owner) throw new SettingsError('notebook owner exists without its Ask; restore its notebook before rename', { code: 'AG_NOTEBOOK_OWNER' })
 		const ownership = source_rounds.length ? owner.guard({ root: repo_root, notebook: source, text: source_text, host, session: options.session, workspace }) : null
 		for (const notebook of options.backlink_paths || []) {
@@ -1543,7 +1627,7 @@ const apply_changes = (config, changes, options = {}) => {
 
 const change_configuration = (config_path, changes, options = {}) => {
 	const repo_root = node_path.resolve(options.repo_root || node_path.dirname(config_path))
-	const config = read_json_config(config_path, { ...options, repo_root })
+	const config = read_json_config(config_path, { ...options, repo_root, strict_values: true })
 	const active_host = options.active_host || options.explicit_host || detect_host(options)
 	const result = apply_changes(config, changes, { ...options, repo_root, active_host })
 	if (result.changes.length > 0) write_config_atomic(config_path, result.config, { ...options, repo_root, active_host })
@@ -1731,7 +1815,7 @@ const tier_for_role = role => {
 const configured_tier_for_role = (config, role) => {
 	const key = normalise_role(role)
 	if (!pipeline_role_names.includes(key)) return { role: key, tier: tier_for_role(role) }
-	const tier = config['pipeline-roles'][key]
+	const tier = key === 'threeways' ? threeways_tier(config) : config['pipeline-roles'][key]
 	if (tier === 'off') throw new SettingsError(`pipeline stage ${key} is disabled by pipeline-roles.${key}=off; the full pipeline is unavailable when this stage is required`, { code: 'AG_STAGE_DISABLED' })
 	return { role: key, tier }
 }
@@ -1792,18 +1876,21 @@ const resolve_worker_tier = (config, role_or_options, validation_options = {}) =
 
 const resolve_tier = (config, tier, options = {}) => resolve_worker_tier(config, { ...options, tier, role: options.role || tier }, options)
 
+const threeways_tier = config => has_own(config?.['pipeline-roles'] || {}, 'threeways') ? config['pipeline-roles'].threeways : 'better'
+
 const resolve_threeways_worker = (config, options = {}) => {
 	assert_valid_config(config, options)
 	if (options.owner_exact_model === true) throw new SettingsError('an unavailable owner-selected exact model needs an owner decision; threeways must not substitute it', { code: 'AG_THREEWAYS_EXACT_MODEL' })
+	const tier = threeways_tier(config)
 	const host_family = options.host_family || family_for_host(options.active_host || options.explicit_host || options.coordinator_host || '')
 	const available = typeof options.executable_available === 'function'
 		? options.executable_available
 		: command => executable_available(command, options)
 	const disabled = new Set(options.disabled_profile_ids instanceof Set ? options.disabled_profile_ids : Array.isArray(options.disabled_profile_ids) ? options.disabled_profile_ids : [])
 	const candidates = config['external-workers']
-		.filter(profile => profile && !disabled.has(profile.id) && profile_has_tier(profile, 'better') && available(profile.command[0]) === true)
+		.filter(profile => profile && !disabled.has(profile.id) && profile_has_tier(profile, tier) && available(profile.command[0]) === true)
 		.sort((left, right) => right.priority - left.priority)
-	if (candidates.length === 0) throw no_eligible_profile_error(config.switches['cli-provider'])
+	if (candidates.length === 0) throw new SettingsError(`No eligible external-worker profile provides threeways tier ${tier}`, { code: 'AG_DISPATCH_TIER_UNAVAILABLE' })
 	const same_family = host_family ? candidates.find(profile => profile_family(profile) === host_family) : undefined
 	const different_family = host_family && config.switches['cli-provider'] === 'on'
 		? candidates.find(profile => profile_family(profile) && profile_family(profile) !== host_family)
@@ -1812,10 +1899,10 @@ const resolve_threeways_worker = (config, options = {}) => {
 	if (!profile) throw no_eligible_profile_error(config.switches['cli-provider'])
 	const family_known = Boolean(host_family && profile_family(profile))
 	return {
-		...resolve_profile_tier(profile, 'better'),
+		...resolve_profile_tier(profile, tier),
 		stage_id: 'threeways',
 		family_diversity: !family_known ? 'unknown' : different_family ? 'different-family' : 'same-family-fallback',
-		limitation: !family_known ? 'host or worker family is unknown; family diversity cannot be established' : different_family ? undefined : 'different-family better worker unavailable or disallowed; same-family fallback recorded'
+		limitation: !family_known ? 'host or worker family is unknown; family diversity cannot be established' : different_family ? undefined : `different-family ${tier} worker unavailable or disallowed; same-family fallback recorded`
 	}
 }
 
@@ -1924,7 +2011,7 @@ const render_dispatch_substitution = format_dispatch_substitution
 const switch_display_value = (config, key) => {
 	if (Array.isArray(config.switches[key])) return JSON.stringify(config.switches[key])
 	if (has_own(config.switches, key)) return config.switches[key]
-	return completion_cleanup_defaults[key] ?? notebook_control_defaults[key] ?? (key === 'git-timeout-ms' ? git_timeout_default_ms : config.switches[key])
+	return completion_cleanup_defaults[key] ?? notebook_control_defaults[key] ?? (key === 'away-gates' ? 'off' : key === 'git-timeout-ms' ? git_timeout_default_ms : config.switches[key])
 }
 
 const format_settings_display = (config, options = {}) => {
@@ -1941,7 +2028,7 @@ const format_settings_display = (config, options = {}) => {
 		...switch_names.map(key => `- ${key}: ${switch_display_value(config, key)}`),
 		'',
 		'Pipeline roles:',
-		...pipeline_role_names.map(role => `- pipeline-roles.${role}: ${config['pipeline-roles'][role]}`),
+		...pipeline_role_names.map(role => `- pipeline-roles.${role}: ${role === 'threeways' ? threeways_tier(config) : config['pipeline-roles'][role]}`),
 		'',
 		'External worker profiles:',
 		...profiles.flatMap(profile => [
@@ -1956,8 +2043,10 @@ const format_settings_display = (config, options = {}) => {
 		'- target-doc: repository-relative path ending in .md; use target-doc: <path>',
 		'- cli-provider: off or on; use cli-provider: <value>',
 		'- auto-reply: on or off; use auto-reply: <value>',
+		'- away-gates: on or off (default off); supplies Design Go and Result Go only after required evidence passes; use away-gates: <value>',
 		'- log-verbosity: off, wip, or all (default all); controls RUN/WIP records, never Reply; use log-verbosity: <value>',
 		'- inline-reply: on or off (default off); also display the saved Reply; use inline-reply: <value>',
+		'- notebook-ownership: on or off (default off); on protects each Ask from other sessions; off retains file locks but allows mixed session work; use notebook-ownership: <value>',
 		'- lang: non-empty language tag or existing language name; use lang: <value>',
 		'- streams: ask, always, or off; use streams: <value>',
 		'- ask-names: on or off; use ask-names: <value>',
@@ -1969,6 +2058,7 @@ const format_settings_display = (config, options = {}) => {
 		'- completion-cleanup: off or on; use completion-cleanup: <value>',
 		'- completion-cleanup-interval-days: integer from 1 through 365; use completion-cleanup-interval-days: <value>',
 		'- pipeline roles: requirements, codewalk, explore, spike, spec, implementation, security-scan, acceptance, cross-check, or learn; use pipeline-roles.<stage>: off or <tier>',
+		'- pipeline-roles.threeways: optional review tier (default better); off is not supported; unavailable tiers never silently downgrade',
 		'- worker profiles: id, literal command array, priority 1 through 5, optional family, required best/better/basic/cheap tiers, and lowercase custom tiers; use <profile-id>.best: <value> or <profile-id>.<custom-tier>: <value>',
 		'- profile model/effort values: parser-valid <model>/<effort>; model family is selected separately by cli-provider',
 		'- target-doc: use the dedicated rename-target-document operation; it is not a generic atomic setting change',
@@ -2025,14 +2115,14 @@ const cli_main = (argv, io = {}) => {
 
 	const config_path = options.config_path || active_config_path(repo_root, notebook_path)
 	if (parsed.command === 'validate') {
-		const config = read_json_config(config_path, common)
+		const config = read_json_config(config_path, { ...common, strict_values: true })
 		output(`valid ${display_path(config_path, repo_root)} for ${common.explicit_host || common.active_host || detect_host(common)}`)
 		const validation = validate_config(config, common)
 		for (const warning of validation.warnings) output(warning)
 		return 0
 	}
 	if (parsed.command === 'show' || parsed.command === 'settings') {
-		const config = read_json_config(config_path, common)
+		const config = read_json_config(config_path, { ...common, strict_values: true })
 		output(format_settings_display(config, common))
 		return 0
 	}
@@ -2065,6 +2155,7 @@ module.exports = {
 	schema_version,
 	git_timeout_default_ms,
 	tier_names,
+	tier_name_error,
 	pipeline_role_names,
 	mandatory_pipeline_roles,
 	switch_names,
@@ -2084,6 +2175,7 @@ module.exports = {
 	normalise_host_identity,
 	migrate_config,
 	make_template,
+	audit_template,
 	detect_initial_language,
 	template_for_host,
 	detect_host_info,
@@ -2138,6 +2230,7 @@ module.exports = {
 	resolve_worker_tier,
 	resolve_tier,
 	resolve_threeways_worker,
+	threeways_tier,
 	fallback_tiers,
 	resolve_dispatch_failure,
 	format_dispatch_substitution,

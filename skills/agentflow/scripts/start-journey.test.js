@@ -14,6 +14,17 @@ ownership_fixture.configure();
 const SKILL_ROOT = path.resolve(__dirname, '..');
 const AGF = path.join(SKILL_ROOT, 'scripts', 'agf.js');
 const STOP = path.join(SKILL_ROOT, 'scripts', 'stop-hook.js');
+const WRITER = path.join(SKILL_ROOT, 'scripts', 'notebook-write.js');
+const terminal_executable = command => {
+  const candidates = command.includes('/') ? [command] : (process.env.PATH || '').split(path.delimiter).map(directory => path.join(directory, command));
+  return candidates.some(file => {
+    try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); } catch { return false; }
+  });
+};
+const terminal_skip = process.platform === 'win32'
+  ? 'requires a Unix PTY; native Windows is not supported by this terminal fixture'
+  : ['/usr/bin/expect', '/bin/sh', 'tty', 'tee'].every(terminal_executable) ? false : 'requires executable /usr/bin/expect, /bin/sh, tty and tee for this Unix PTY fixture';
+
 const PTY_SCRIPT = [
 	'set timeout 30',
 	'log_user 1',
@@ -21,6 +32,8 @@ const PTY_SCRIPT = [
 	'    spawn /bin/sh -c {test -t 0 && test -t 1 && tty && printf %s "$JOURNEY_INPUT" | tee /dev/stderr | "$JOURNEY_NODE" "$JOURNEY_AGF" start --repo "$JOURNEY_REPO" --host "$JOURNEY_HOST" --message-stdin --json}',
 	'} elseif {$env(JOURNEY_MODE) == "stop"} {',
 	'    spawn /bin/sh -c {test -t 0 && test -t 1 && tty && printf %s "$JOURNEY_INPUT" | tee /dev/stderr | "$JOURNEY_NODE" "$JOURNEY_STOP" --host "$JOURNEY_HOST"; outcome=$?; printf "\\nStop exit: %s\\n" "$outcome"; exit "$outcome"}',
+	'} elseif {$env(JOURNEY_MODE) == "manual"} {',
+	'    spawn /bin/sh -c {test -t 0 && test -t 1 && tty && printf %s "$JOURNEY_INPUT" | tee /dev/stderr | "$JOURNEY_NODE" "$JOURNEY_WRITER" append-input --notebook "$JOURNEY_NOTEBOOK" --host "$JOURNEY_HOST" --session "$JOURNEY_SESSION" --input-stdin}',
 	'} else {',
 	'    spawn /bin/sh -c {test -t 0 && test -t 1 && tty && printf %s "$JOURNEY_INPUT" | tee /dev/stderr | "$JOURNEY_NODE" "$JOURNEY_AGF" close --manifest-stdin}',
 	'}',
@@ -29,20 +42,20 @@ const PTY_SCRIPT = [
 	'exit [lindex $waited 3]',
 ].join('\n');
 
-const pty = { skip: process.platform === 'win32' ? 'requires /usr/bin/expect and a POSIX terminal' : false };
-
 const run = (cwd, command, input, env) => {
 	const result = child_process.spawnSync('/usr/bin/expect', ['-c', PTY_SCRIPT], {
 		cwd,
 		env: {
 			...process.env,
 			...env,
-			AGENTFLOW_SESSION_ID: ownership_fixture.session,
-			JOURNEY_MODE: command.includes('start') ? 'start' : command[0] === STOP ? 'stop' : 'close',
+			AGENTFLOW_SESSION_ID: env?.AGENTFLOW_SESSION_ID ?? ownership_fixture.session,
+			JOURNEY_MODE: command.includes('start') ? 'start' : command[0] === STOP ? 'stop' : command.includes('append-input') ? 'manual' : 'close',
 			JOURNEY_HOST: command[command.indexOf('--host') + 1] || 'codex',
 			JOURNEY_NODE: process.execPath,
 			JOURNEY_AGF: AGF,
 			JOURNEY_STOP: STOP,
+			JOURNEY_WRITER: WRITER,
+			JOURNEY_SESSION: command.includes('--session') ? command[command.indexOf('--session') + 1] : '',
 			JOURNEY_REPO: cwd,
 			JOURNEY_NOTEBOOK: command[command.indexOf('--notebook') + 1] || '',
 			JOURNEY_INPUT: input,
@@ -67,7 +80,81 @@ const transcript_json = transcript => {
 
 const git = (cwd, args) => child_process.execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'non-behavioral', 'natural-waiver', 'non-git', 'non-git-normal', 'archive-retry']) test(`${mode} real start and one-command close journey proves visible input, JSON output, and scoped local delivery`, pty, () => {
+test('real Claude PTY startup, stale prompt and manual owner capture retain Stop enforcement', { skip: terminal_skip }, () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-claude-manual-journey-')));
+  const env = { CODEX_THREAD_ID: '', CODEX_SESSION_ID: '', CLAUDE_SESSION_ID: '', CLAUDE_PROJECT_DIR: '', AGENTFLOW_SESSION_ID: '', AGENTFLOW_EXTERNAL_DELEGATE: '', CLAUDE_CODE_SESSION_ID: 'claude-manual-journey' };
+  const started = run(root, [AGF, 'start', '--repo', root, '--host', 'claude', '--message-stdin', '--json'], 'journey owner request\n', env);
+  assert.equal(started.status, 0, started.stdout + started.stderr);
+  assert.match(started.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
+  assert.match(started.stdout, /journey owner request/);
+  const output = transcript_json(started.stdout);
+  assert.equal(output.session_id, env.CLAUDE_CODE_SESSION_ID);
+  assert.equal(output.hooks.prompt_capture, 'manual');
+  const notebook = path.join(root, output.notebook);
+  const original = fs.readFileSync(notebook, 'utf8');
+  const settings_file = path.join(root, '.claude/settings.local.json');
+  const hooks = JSON.parse(fs.readFileSync(settings_file, 'utf8')).hooks;
+  assert.equal(hooks.Stop.length, 1);
+  assert.equal(hooks.UserPromptSubmit, undefined);
+  const generated = '<agent-message from="fixture">Generated handback</agent-message>';
+  const stale = run(root, [STOP, '--host', 'claude'], JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: output.session_id, prompt: generated }), env);
+  assert.equal(stale.status, 0, stale.stdout + stale.stderr);
+  assert.match(stale.stdout, /Generated handback/);
+  assert.doesNotMatch(stale.stdout, /instruction was saved/);
+  assert.equal(fs.readFileSync(notebook, 'utf8'), original);
+  const manual_command = [WRITER, 'append-input', '--notebook', output.notebook, '--host', 'claude', '--session', output.session_id, '--input-stdin'];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const captured = run(root, manual_command, 'actual owner follow-up\n', env);
+    assert.equal(captured.status, 0, captured.stdout + captured.stderr);
+    assert.match(captured.stdout, /actual owner follow-up/);
+    const receipt = transcript_json(captured.stdout);
+    assert.equal(receipt.notebook, output.notebook);
+    assert.equal(receipt.inserted, attempt === 0);
+  }
+  assert.equal(fs.readFileSync(notebook, 'utf8').split('+ actual owner follow-up').length - 1, 1);
+  assert.ok(!fs.readFileSync(notebook, 'utf8').includes(generated));
+  const config = fs.readFileSync(path.join(root, 'ag.json'));
+  fs.writeFileSync(path.join(root, 'ag.json'), '{ malformed configuration');
+  const stop = run(root, [STOP, '--host', 'claude'], JSON.stringify({ cwd: root, hook_event_name: 'Stop', session_id: output.session_id }), env);
+  assert.equal(stop.status, 2, stop.stdout + stop.stderr);
+  assert.match(stop.stdout, /configuration_valid/);
+  fs.writeFileSync(path.join(root, 'ag.json'), config);
+});
+
+test('real PTY startup and prompt capture expose retained-history recovery instructions', { skip: terminal_skip }, () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-retention-journey-')));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-retention-home-')));
+  const skill = path.join(home, '.codex', 'skills', 'agentflow');
+  fs.mkdirSync(path.dirname(skill), { recursive: true });
+  fs.symlinkSync(SKILL_ROOT, skill, 'dir');
+  const env = { HOME: home, USERPROFILE: home };
+  const command = [AGF, 'start', '--repo', root, '--host', 'codex', '--message-stdin', '--json'];
+  const first = run(root, command, 'godev\n', env);
+  assert.equal(first.status, 0, first.stdout + first.stderr);
+  const file = path.join(root, '.agentflow/devlog.md');
+  const prefix = fs.readFileSync(file, 'utf8').split('# → Ask /')[0];
+  const pending = '# → Ask / A-001\n\n+ original request\n\n# ← Reply / A-001\n\n' + 'done\n'.repeat(750) + '\n-> ask: unresolved followup\n\n---\n\n';
+  fs.writeFileSync(file, prefix + pending + '# → Ask / A-003\n\n+\n');
+  const start = run(root, command, 'godev\n', env);
+  assert.equal(start.status, 0, start.stdout + start.stderr);
+  assert.match(start.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
+  assert.match(start.stdout, /godev/);
+  const notice = transcript_json(start.stdout).compaction;
+  assert.equal(notice.blocked.ask, 'A-001');
+  assert.match(notice.message, /answer recovery.*verify.*include-answered/iu);
+  const input = JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: ownership_fixture.session, prompt: 'continue after archive warning' });
+  const capture = run(root, [STOP, '--host', 'codex'], input, env);
+  assert.equal(capture.status, 0, capture.stdout + capture.stderr);
+  assert.match(capture.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
+  assert.match(capture.stdout, /continue after archive warning/);
+  assert.match(capture.stdout, /A-001.*answered-round-retained/);
+  const saved = fs.readFileSync(file, 'utf8');
+  assert.ok(saved.includes(pending));
+  assert.match(saved, /\+ continue after archive warning/);
+  assert.equal(fs.existsSync(path.join(root, '.agentflow/devlog.archive.md')), false);
+});
+
+for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'non-behavioral', 'natural-waiver', 'non-git', 'non-git-normal', 'archive-retry']) test(`${mode} real start and one-command close journey proves visible input, JSON output, and scoped local delivery`, { skip: terminal_skip }, () => {
 	const non_git = mode.startsWith('non-git');
 	const fast_lane = ['inline', 'resume', 'comma-resume', 'non-git'].includes(mode);
 	const resuming = mode === 'resume' || mode === 'comma-resume';
@@ -99,7 +186,7 @@ for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'n
 		const first = run(root, host_command, owner_request, host_env);
 		assert.equal(first.status, 0, `${first.command}\n${first.input}\n${first.stdout}\n${first.stderr}`);
 		assert.match(first.stdout, /journey owner request/);
-		assert.match(first.stdout, /\/dev\/(?:tty|pts\/)/);
+		assert.match(first.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
 		const first_output = transcript_json(first.stdout);
 		assert.equal(first_output.active_host, 'codex');
 		assert.equal(first_output.setup_created, !non_git);
@@ -177,7 +264,7 @@ for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'n
 		}
 		const close = run(root, [AGF, 'close', '--manifest-stdin'], close_input, host_env);
 		assert.equal(close.status, 0, `${close.command}\n${close.input}\n${close.stdout}\n${close.stderr}`);
-		assert.match(close.stdout, /\/dev\/(?:tty|pts\/)/);
+		assert.match(close.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
 		if (archive_retry) {
 			assert.match(close.stdout, /The archive retry completed/);
 			assert.equal(fs.readFileSync(path.join(root, '.agentflow/devlog.archive.md'), 'utf8'), archive_before);
@@ -197,7 +284,7 @@ for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'n
 		if (mode === 'normal' || mode === 'comma-resume' || archive_retry) {
 			const stop = run(root, [STOP, '--host', 'codex'], JSON.stringify({ cwd: root, hook_event_name: 'Stop' }), host_env);
 			assert.equal(stop.status, 0, stop.stdout + stop.stderr);
-			assert.match(stop.stdout, /\/dev\/(?:tty|pts\/)/);
+			assert.match(stop.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
 			assert.match(stop.stdout, /hook_event_name.*Stop/);
 			assert.match(stop.stdout, /Stop exit: 0/);
 		}
@@ -224,12 +311,12 @@ for (const mode of ['normal', 'inline', 'resume', 'comma-resume', 'cosmetic', 'n
 	}
 });
 
-test('real PTY startup detects the computer language and preserves the saved choice', pty, () => {
+test('real PTY startup detects the computer language and preserves the saved choice', { skip: terminal_skip }, () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-locale-journey-')));
 	const expected = detect_initial_language();
 	const first = run(root, [AGF, 'start', '--host', 'codex'], 'locale journey\n');
 	assert.equal(first.status, 0, first.stderr + first.stdout);
-	assert.match(first.stdout, /\/dev\/(?:tty|pts\/)/);
+	assert.match(first.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
 	assert.match(first.stdout, /locale journey/);
 	assert.equal(transcript_json(first.stdout).configuration.language, expected);
 	const config_path = path.join(root, 'ag.json');
@@ -244,7 +331,26 @@ test('real PTY startup detects the computer language and preserves the saved cho
 	assert.equal(fs.readFileSync(config_path, 'utf8'), saved);
 });
 
-test('active-host real PTY startup adds the other host only when it runs', pty, () => {
+test('real PTY startup adds missing settings and reports a safe invalid value', { skip: terminal_skip }, () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-audit-journey-')));
+	const settings = require('./ag-settings.js');
+	settings.initialize_project({ repo_root: root, active_host: 'codex' });
+	const config_path = path.join(root, 'ag.json');
+	const config = JSON.parse(fs.readFileSync(config_path, 'utf8'));
+	delete config.switches['away-gates'];
+	config.switches['log-verbosity'] = 'maybe';
+	fs.writeFileSync(config_path, `${JSON.stringify(config, null, 2)}\n`);
+	const result = run(root, [AGF, 'start', '--host', 'codex'], 'godev\n');
+	assert.equal(result.status, 0, result.stderr + result.stdout);
+	assert.match(result.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
+	assert.match(result.stdout, /godev/);
+	assert.deepEqual(transcript_json(result.stdout).config_audit, { added: ['switches.away-gates'], invalid: [{ path: 'switches.log-verbosity', value: 'maybe', suggested: 'all' }] });
+	const saved = JSON.parse(fs.readFileSync(config_path, 'utf8'));
+	assert.equal(saved.switches['away-gates'], 'off');
+	assert.equal(saved.switches['log-verbosity'], 'maybe');
+});
+
+test('active-host real PTY startup adds the other host only when it runs', { skip: terminal_skip }, () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-host-journey-')));
 	let prior_host;
 	for (const host of ['codex', 'codex', 'claude', 'claude']) {
@@ -252,7 +358,7 @@ test('active-host real PTY startup adds the other host only when it runs', pty, 
 		prior_host = host;
 		const result = run(root, [AGF, 'start', '--host', host], 'active host journey\n');
 		assert.equal(result.status, 0, result.stderr + result.stdout);
-		assert.match(result.stdout, /\/dev\/(?:tty|pts\/)/);
+		assert.match(result.stdout, /\/dev\/(?:tt[^\s]+|pts\/\d+)/);
 		assert.match(result.stdout, /active host journey/);
 		assert.equal(transcript_json(result.stdout).active_host, host);
 		assert.ok(fs.existsSync(path.join(root, '.codex', 'hooks.json')));

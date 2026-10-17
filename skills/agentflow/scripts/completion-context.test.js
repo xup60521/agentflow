@@ -16,10 +16,10 @@ test('explicit review waivers accept Markdown and enumerated skip lists without 
 	const root = cleanup_fixture();
 	write(root, 'changed.js', 'module.exports = 1;\n');
 	const decision = owner => collect({ project_root: root, notebook_path: '.agentflow/devlog.md', devlog_text: `# → Ask / A-002\n\n${owner}\n\n# ← Reply / A-002\n\n- Host review: PASS — inspected changed source.\n` }).review_decision;
-	for (const owner of ['**skip ag, delegation, stream and external review**', '+ skip AG, delegation, streams, and external review.', '- Please skip the final external review.', '+ no external review', '+ skip review', '+ skip cross-check', '+ skip ag pipeline, stream and cross-check', '+ Implement the fix. **skip ag pipeline, stream and cross-check, never over-egnieering**', '+ implement `4. **Detect conflicting skills — feasible, with explicit limits.**` as you proposed, add proper runtime warning (in seperate prompt file and only loaded on-demand) and `agf skills audit`. **skip ag pipeline, stream and cross-check, never over-egnieering**']) {
+	for (const owner of ['**skip ag, delegation, stream and external review**', '+ skip AG, delegation, streams, and external review.', '- Please skip the final external review.', '+ no external review', '+ skip review', '+ skip cross-check', '+ review it yourself,', '+ please review this yourself.', '+ stop the reviewer and review it yourself', '+ skip ag pipeline, stream and cross-check', '+ Implement the fix. **skip ag pipeline, stream and cross-check, never over-egnieering**', '+ implement `4. **Detect conflicting skills — feasible, with explicit limits.**` as you proposed, add proper runtime warning (in seperate prompt file and only loaded on-demand) and `agf skills audit`. **skip ag pipeline, stream and cross-check, never over-egnieering**']) {
 		assert.equal(decision(owner).status, 'skip-review', owner);
 	}
-	for (const owner of ['> skip external review', '`skip external review`', 'For example: skip external review', 'Should we skip external review?', 'Do not skip external review', '```\nskip external review\n```', '~~~\n+ skip-review: example only\n~~~', '+ skip ag and delegation', '+ skip internal review', '+ skip validation and external review', '+ For example. skip cross-check', '+ Should I implement this? skip cross-check', '+ Do not implement this. skip cross-check', '+ Implement this if approved. skip cross-check', '+ Implement the fix. Do not skip cross-check', '+ Implement the fix. `skip cross-check`', '+ Implement the fix. “skip cross-check”', '+ Implement the fix. skip cross-check if tests pass', '+ Implement the fix. skip cross-check, and disable validation', '+ Implement the fix. For example: skip cross-check', '+ Implement the fix. skip cross-check "if approved"']) {
+	for (const owner of ['> skip external review', '`skip external review`', 'For example: skip external review', 'Should we skip external review?', 'Do not skip external review', '```\nskip external review\n```', '~~~\n+ skip-review: example only\n~~~', '+ `review it yourself`', '+ “review it yourself”', '+ For example: review it yourself', '+ Should you review it yourself?', '+ If the reviewer is busy, review it yourself', '+ Do not review it yourself', '+ skip ag and delegation', '+ skip internal review', '+ skip validation and external review', '+ For example. skip cross-check', '+ Should I implement this? skip cross-check', '+ Do not implement this. skip cross-check', '+ Implement this if approved. skip cross-check', '+ Implement the fix. Do not skip cross-check', '+ Implement the fix. `skip cross-check`', '+ Implement the fix. “skip cross-check”', '+ Implement the fix. skip cross-check if tests pass', '+ Implement the fix. skip cross-check, and disable validation', '+ Implement the fix. For example: skip cross-check', '+ Implement the fix. skip cross-check "if approved"']) {
 		assert.equal(decision(owner).status, 'required', owner);
 	}
 });
@@ -331,6 +331,17 @@ const scope_fixture = () => {
   return { root, notebook_path };
 };
 
+test('completion checks read away-gates from the active configuration', () => {
+  const fixture = scope_fixture();
+  const config_path = path.join(fixture.root, 'ag.json');
+  const config = JSON.parse(fs.readFileSync(config_path, 'utf8'));
+  const devlog_text = fs.readFileSync(path.join(fixture.root, fixture.notebook_path), 'utf8');
+  assert.equal(collect({ project_root: fixture.root, notebook_path: fixture.notebook_path, active_host: 'codex', devlog_text })['away-gates'], 'off');
+  config.switches['away-gates'] = 'on';
+  fs.writeFileSync(config_path, `${JSON.stringify(config, null, 2)}\n`);
+  assert.equal(collect({ project_root: fixture.root, notebook_path: fixture.notebook_path, active_host: 'codex', devlog_text })['away-gates'], 'on');
+});
+
 test('post-merge cleanup does not request a second review of delivered stream changes', () => {
 	const root = cleanup_fixture();
 	const devlog_text = fs.readFileSync(path.join(root, '.agentflow/devlog.md'), 'utf8');
@@ -578,4 +589,24 @@ test('completion metadata classifications share fence boundaries and reject dupl
   }
   write(root, 'new-behavior.js', 'module.exports = 7;\n');
   assert.equal(decision(fence(classification)).status, 'required');
+});
+
+for (const command of ['skip review', 'skip-review: example only']) {
+  for (const quote of ['"', "'", '`', '“', '‘']) {
+    test(`review waiver ignores multiline ${quote} ${command}`, () => {
+      const root = cleanup_fixture();
+      write(root, 'changed.js', 'module.exports = 1;\n');
+      const close = quote === '“' ? '”' : quote === '‘' ? '’' : quote;
+      const text = `# → Ask / A-002\n\n+ ${quote}\n+ ${command}\n+ ${close}\n\n# ← Reply / A-002\n\n- Host review: PASS — inspected changed source.\n`;
+      assert.equal(collect({ project_root: root, notebook_path: '.agentflow/devlog.md', devlog_text: text }).review_decision.status, 'required');
+    });
+  }
+}
+
+test('quoted waiver examples leave real review controls available', () => {
+  const root = cleanup_fixture();
+  write(root, 'changed.js', 'module.exports = 1;\n');
+  const decision = owner => collect({ project_root: root, notebook_path: '.agentflow/devlog.md', devlog_text: `# → Ask / A-002\n\n${owner}\n\n# ← Reply / A-002\n\n- Host review: PASS — inspected changed source.\n` }).review_decision;
+  for (const owner of ['"\nskip review\n"\nskip review', '`\nskip-review: example\n`\nskip-review: approved bounded change']) assert.equal(decision(owner).status, 'skip-review', owner);
+  for (const owner of ['Do not skip review', 'If approved, skip review', 'Unless approved, skip review', '> skip-review: example only', '```\nskip-review: example only\n```']) assert.equal(decision(owner).status, 'required', owner);
 });

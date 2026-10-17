@@ -91,6 +91,27 @@ test('an old empty Ask cannot be reused as proof of a newly completed round', as
   }
 })
 
+test('Windows looper accepts ACL-based state and reaches worker launch', { skip: process.platform !== 'win32' ? 'Windows security boundary' : false }, async () => {
+  const dir = make_temp_dir('agentflow-looper-windows-acl')
+  const queue = path.join(dir, 'planned')
+  try {
+    fs.mkdirSync(queue)
+    fs.writeFileSync(path.join(dir, 'devlog.md'), '# → Ask / A-001\n\n+\n')
+    write_plan(queue, 'plan-001.md')
+    const fake_child = make_fake_child(dir)
+    let launched = false
+    const result = await run_looper(base_options(queue, fake_child, {}, {
+      root: dir,
+      spawn: () => { launched = true; throw Error('Windows launch boundary reached') },
+    }))
+    assert.notEqual(result.code, 0)
+    assert.match(result.message, /Windows launch boundary reached/)
+    assert.doesNotMatch(result.message, /permission bits/)
+    assert.equal(launched, true)
+    assert.equal(fs.existsSync(path.join(queue, 'plan-001.md')), true)
+  } finally { remove_temp_dir(dir) }
+})
+
 test('a completion signal cannot archive a plan without a new notebook round', async () => {
   const dir = make_temp_dir('agentflow-looper-notebook-proof')
   const queue = path.join(dir, 'planned')

@@ -55,7 +55,7 @@ const verify_archive = (file, original) => {
   if (!same(current, original)) throw Error('archive identity changed before publication');
 };
 
-const publish_archive = ({ file, original, additions, notebook_file, notebook }) => {
+const publish_archive = ({ file, original, additions, notebook_file, notebook, ownership }) => {
   const temporary = `${file}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`;
   let fd, renamed = false;
   const hash = crypto.createHash('sha256');
@@ -73,6 +73,7 @@ const publish_archive = ({ file, original, additions, notebook_file, notebook })
     if (writer.read_regular_file(temporary, 'archive', () => {}).hash !== expected) throw Error('archive copy verification failed');
     verify_archive(file, original);
     writer.verify_notebook_unchanged(notebook_file, notebook);
+    require('./notebook-owner').verify(ownership);
     // Windows renames an existing entry to a case alias; keep the stored spelling.
     fs.renameSync(temporary, require('./notebook-owner').filesystem_spelling(file)); renamed = true;
     const saved = archive_index(file);
@@ -85,19 +86,21 @@ const publish_archive = ({ file, original, additions, notebook_file, notebook })
 };
 
 // Caller holds the notebook lock and has checked session ownership.
-const compact_locked = ({ root, notebook, original, force = false, include_answered = false }) => {
+const compact_locked = ({ root, notebook, original, ownership, force = false, include_answered = false }) => {
   notebook = require('./notebook-owner').location({ root, notebook }).notebook;
   const result = { notebook, archive: archive_path_for_notebook(notebook), rounds: [], snapshot: original };
-  if (!force && original.content.length < 768 * 1024 && (original.text.match(/\n/gu) || []).length <= 1000) return result;
+  if (!force && original.content.length < 768 * 1024 && (original.text.match(/\n/gu) || []).length < 750) return result;
   const parsed = parse_devlog(original.text);
   const selected = [];
   let blocked;
-  for (const round of parsed.rounds.slice(0, -1)) {
+  // Keep the latest completed round beside the current Ask, even for forced compaction.
+  const latest_completed = parsed.rounds.findLastIndex(round => round.reply_text.trim());
+  for (const round of parsed.rounds.slice(0, Math.max(0, latest_completed))) {
     if (!round.reply_text.trim()) {
       blocked = { ask: round.id, reason: 'open-round-retained' };
       break;
     }
-    if (!include_answered && /^[ \t]*[-+]?[ \t]*ans:[ \t]*\S/imu.test(round.text)) {
+    if (!include_answered && /^[ \t]*[-+]?[ \t]*(?:ans:|->[ \t]*(?:ask|ans):)[ \t]*\S/imu.test(round.text)) {
       blocked = { ask: round.id, reason: 'answered-round-retained' };
       break;
     }
@@ -106,6 +109,7 @@ const compact_locked = ({ root, notebook, original, force = false, include_answe
   if (blocked) {
     result.blocked = blocked;
     result.message = `Compaction retained ${blocked.ask} (${blocked.reason}); its live bytes and the unselected suffix remain authoritative.`;
+    if (blocked.reason === 'answered-round-retained') result.message += ' After answer recovery, verify every selected answer or request is handled before using compact --include-answered true; otherwise keep the unresolved suffix live and report it.';
   }
   if (!selected.length) return result;
   const boundaries = lint_round_boundaries(original.text);
@@ -136,7 +140,7 @@ const compact_locked = ({ root, notebook, original, force = false, include_answe
     result.rounds.push(proof);
   }
   if (additions.length && prior && !prior.ends_line) throw Error('archive does not end at a line boundary; live notebook retained');
-  const saved = additions.length ? publish_archive({ file: archive, original: prior, additions, notebook_file: file, notebook: original }) : prior;
+  const saved = additions.length ? publish_archive({ file: archive, original: prior, additions, notebook_file: file, notebook: original, ownership }) : prior;
   for (const proof of result.rounds) {
     const copy = saved.rounds.get(proof.id);
     if (!copy || copy.bytes !== proof.bytes || copy.sha256 !== proof.sha256) throw Error(`archive verification failed for ${proof.id}; live notebook retained`);
@@ -147,6 +151,7 @@ const compact_locked = ({ root, notebook, original, force = false, include_answe
   const candidate = Buffer.from(prefix + original.text.slice(selected.at(-1).end));
   writer.verify_notebook_unchanged(file, original);
   verify_archive(archive, saved);
+  require('./notebook-owner').verify(ownership);
   writer.atomic_replace(file, candidate, original.mode);
   result.snapshot = writer.read_regular_file(file, 'notebook');
   if (!result.snapshot.content.equals(candidate)) throw Error('compacted notebook verification failed');
@@ -160,8 +165,8 @@ const compact = ({ root = process.cwd(), notebook, host, session, include_answer
   const lock = writer.acquire_close_round_lock(`${file}.close-round.lock`);
   try {
     const original = writer.read_regular_file(file, 'notebook');
-    require('./notebook-owner').guard({ root, notebook, text: original.text, host, session });
-    const { snapshot, ...result } = compact_locked({ root, notebook, original, force: true, include_answered });
+    const ownership = require('./notebook-owner').guard({ root, notebook, text: original.text, host, session });
+    const { snapshot, ...result } = compact_locked({ root, notebook, original, ownership, force: true, include_answered });
     return { ...result, bytes_before: original.content.length, bytes_after: snapshot.content.length };
   } finally { writer.release_close_round_lock(lock); }
 };

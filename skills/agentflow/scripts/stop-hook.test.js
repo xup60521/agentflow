@@ -46,14 +46,26 @@ node_test.test('prompt hook adopts a manually saved multi-question Ask without d
   node_assert.equal(node_fs.readFileSync(file, 'utf8').split('+ first question').length - 1, 2);
 });
 
-node_test.test('Claude prompt capture hands the hook session to later commands, including duplicate capture', () => {
+node_test.test('Claude stale prompt hooks silently ignore generated input before notebook and configuration access', () => {
   const root = make_project(round_ending_in_scaffold(valid_reply_body, local_stamp(), 'claude'), 'claude');
-  const payload = { cwd: root, hook_event_name: 'UserPromptSubmit', session_id: 'claude-hook-session', turn_id: 'first', prompt: 'continue from Claude' };
-  const env = { ...process.env, CLAUDE_PROJECT_DIR: '', CLAUDE_SESSION_ID: '' };
-  const first = execFileSync(process.execPath, [hook_path, '--host', 'claude'], { input: JSON.stringify(payload), encoding: 'utf8', env });
-  node_assert.match(first, /claude-hook-session/);
-  const duplicate = execFileSync(process.execPath, [hook_path, '--host', 'claude'], { input: JSON.stringify(payload), encoding: 'utf8', env });
-  node_assert.match(duplicate, /claude-hook-session/);
+  const file = node_path.join(root, '.agentflow/devlog.md');
+  const before = node_fs.readFileSync(file, 'utf8');
+  const preload = node_path.join(root, 'deny-intake.cjs');
+  node_fs.writeFileSync(preload, `const fs = require('node:fs');
+const original = fs.readFileSync;
+fs.readFileSync = (file, ...args) => { if (String(file).endsWith('/ag.json') || String(file).endsWith('/devlog.md')) throw Error('forbidden intake read'); return original(file, ...args); };
+require(${JSON.stringify(node_path.join(__dirname, 'notebook-owner.js'))}).linked_worktree = () => { throw Error('forbidden routing access'); };
+`);
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: '', CLAUDE_SESSION_ID: '', AGENTFLOW_EXTERNAL_DELEGATE: '' };
+  for (const prompt of ['<agent-message from="worker">generated TaskOutput follow-up</agent-message>', 'ordinary owner text', 'no-ag: repair directly']) {
+    const result = require('node:child_process').spawnSync(process.execPath, ['--require', preload, hook_path, '--host', 'claude'], {
+      input: JSON.stringify({ cwd: root, hook_event_name: 'UserPromptSubmit', session_id: 'claude-hook-session', prompt }), encoding: 'utf8', env,
+    });
+    node_assert.equal(result.status, 0);
+    node_assert.equal(result.stdout, '');
+    node_assert.equal(result.stderr, '');
+    node_assert.equal(node_fs.readFileSync(file, 'utf8'), before);
+  }
 });
 
 // A machine-local wall-clock stamp near "now", so honest fixtures sit inside
@@ -660,7 +672,7 @@ node_test.test('stop-hook checkpoint recovery does not create a separate runlog'
 node_test.test('explicit natural review waivers pass the round linter and both stop hosts', () => {
   const { collect } = require('./completion-context.js');
   const { lint_round } = require('./round-linter.js');
-  for (const instruction of ['skip review', 'Please skip the final review.', 'no review', 'stop the reviewer and continue', 'cancel the background reviewer and finish', 'skip-review', 'skip ag pipeline, stream and cross-check', 'Implement the fix. **skip ag pipeline, stream and cross-check, never over-egnieering**']) {
+  for (const instruction of ['skip review', 'Please skip the final review.', 'no review', 'review it yourself,', 'stop the reviewer and review it yourself', 'stop the reviewer and continue', 'cancel the background reviewer and finish', 'skip-review', 'skip ag pipeline, stream and cross-check', 'Implement the fix. **skip ag pipeline, stream and cross-check, never over-egnieering**']) {
     const project = make_skip_review_project('app.js', 'module.exports = true;\n');
     const file = node_path.join(project, '.agentflow/devlog.md');
     const text = node_fs.readFileSync(file, 'utf8').replace('+ skip-review: owner accepts no independent review for this change', `+ ${instruction}`);
@@ -680,7 +692,7 @@ node_test.test('review discussion, negation, and quoted examples do not waive re
   const { collect } = require('./completion-context.js');
   const project = make_skip_review_project('app.js', 'module.exports = true;\n');
   const original = node_fs.readFileSync(node_path.join(project, '.agentflow/devlog.md'), 'utf8');
-  for (const instruction of ['do not skip review', 'should we skip review?', 'if user wants to skip review, let them', '> skip review', 'skip review if tests pass', 'override it']) {
+  for (const instruction of ['do not skip review', 'should we skip review?', 'if user wants to skip review, let them', '> skip review', 'skip review if tests pass', 'for example: review it yourself', 'should you review it yourself?', 'override it']) {
     const text = original.replace('+ skip-review: owner accepts no independent review for this change', `+ ${instruction}`);
     const facts = collect({ project_root: project, notebook_path: '.agentflow/devlog.md', devlog_text: text });
     node_assert.equal(facts.review_decision.status, 'required', instruction);

@@ -9,7 +9,7 @@ const { execFileSync } = require('node:child_process')
 
 const setup = require('./setup.js')
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'agf-setup-'))
+const tmp = () => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-setup-')))
 const drop = (dir) => fs.rmSync(dir, { recursive: true, force: true })
 
 const write_fake_agf = (skill_dir, output_dir = skill_dir) => {

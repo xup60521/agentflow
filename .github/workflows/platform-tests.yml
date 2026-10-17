@@ -1,0 +1,33 @@
+name: Windows and Linux fork tests
+
+on:
+  push:
+    branches: [main, 'integrate/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Configure fixture Git identity
+        run: |
+          git config --global user.name "Agentflow tests"
+          git config --global user.email "agentflow-tests@example.invalid"
+      - name: Test native platform and worktree support
+        working-directory: skills/agentflow/scripts
+        shell: bash
+        run: |
+          node --test --test-concurrency=4 windows.test.js opencode.test.js opencode-plugin.test.mjs external-runner.test.js process-tree.test.js looper.test.js notebook-looper-owner.test.js queue-transports.test.js notebook-write.test.js notebook-compact.test.js completion-cleanup.test.js completion-cleanup-integration.test.js
+          node --test --test-name-pattern='ignore defaults|ignore update|CRLF|provisions local environment|cleanup preserves known|spelled with a different case|linked .worktrees' agf.test.js

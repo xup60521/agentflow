@@ -31,7 +31,8 @@ const owned_hooks = (bytes, host) => {
     const commands = entries[0].hooks
     if (!Array.isArray(commands) || commands.length !== 1 || Object.keys(commands[0]).sort().join(',') !== 'command,type' || commands[0].type !== 'command') return false
     const parsed = hooks.parse_owned_command(commands[0].command)
-    return parsed?.host === host && fs.realpathSync(parsed.script) === fs.realpathSync(path.join(__dirname, 'stop-hook.js'))
+    return parsed?.host === host && (parsed.script === hooks.installed_script_for(host, 'stop-hook.js')
+      || fs.realpathSync(parsed.script) === fs.realpathSync(path.join(__dirname, 'stop-hook.js')))
   })
 }
 
@@ -40,7 +41,7 @@ const inspect = ({ worktree, notebook, key, git }) => {
     if (!/^[a-z0-9][a-z0-9-]*$/u.test(key)) throw Error('stream key is not canonical')
     const status = git(worktree, ['status', '--porcelain', '-z', '--ignored', '--untracked-files=all'], { preserve_nul: true })
     if (!status.ok) throw Error('could not inspect worktree status')
-    const info = owner.location({ root: worktree, notebook })
+    const info = owner.location({ root: worktree, notebook, record_aware: true })
     const record = owner.read(info)
     if (record && record.state !== 'released') throw Error('stream notebook has active or unresolved ownership; close its session first')
     const notebook_file = owner.safe_path(worktree, notebook)

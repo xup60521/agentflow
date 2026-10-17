@@ -1,4 +1,4 @@
-# Agentflow v8.3.3
+# Agentflow v8.4.15
 
 **English** · [繁體中文](README.zh-tw.md)
 
@@ -11,6 +11,10 @@ Agentflow has verified integrations for **Codex and Claude Code** and a portable
 - **Find the result:** Open the notebook named in the assistant’s closing message, usually `.agentflow/devlog.md`.
 
 - **Get help quickly:** Ask your agent, “How do I use the Agentflow skill for this task?” It can explain the controls using your actual project.
+
+- **Discuss possible work first:** Say, “Could we replace the provider? Discuss with me first.” The assistant records the possible task and what decision it needs, discusses your options, then asks a specific question in the saved Reply. Answer in chat or its `ans:` field. Recording an idea does not authorize implementation; rejected or deferred ideas stay recorded, and already-authorized work continues.
+
+Automatic archiving reports when an older answer or request keeps history in the live notebook. The assistant must recover and verify complete saved answers before overriding that protection; unresolved items stay live.
 
 ## About this fork
 
@@ -36,7 +40,7 @@ Then install the `agentflow` plugin from that marketplace. Plugin updates follow
 
 ## Choose the main model
 
-For Codex, we recommends **`gpt-5.6-sol/low` as the most stable coordinator choice in their use**: model `gpt-5.6-sol`, reasoning effort `low`. The coordinator is the assistant you talk to; it organizes the task and checks the result. This recommendation does not change your model settings automatically. [Official model reference](https://developers.openai.com/api/docs/models/gpt-5.6-sol).
+For Codex, we recommend **`gpt-6.1-sol/medium` as the most stable coordinator choice in their use**: model `gpt-6.1-sol`, reasoning effort `medium`. The coordinator is the assistant you talk to; it organizes the task and checks the result. This recommendation does not change your model settings automatically. [Official model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
 
 ## Keep it updated
 
@@ -62,7 +66,15 @@ Keep the existing links. Let me review the result before uploading it.
 
 Small tasks can stay simple. `fast-lane` keeps one task with the main assistant and skips separate review while retaining necessary checks and self-review. `cross-check` requests a separate review of finished work; `review-policy: prefer-independent` permits a clearly labelled host review only after separate-review unavailability, while `require-independent` stays strict. `ag` requests the full development process when the project’s `allow-ag` setting permits it.
 
+`skip-ag [task]` or `/skip-ag [task]` skips the development pipeline and its advisors for the current Ask while keeping devlog records, necessary checks, normal independent review, ordinary delegation, and stream rules. It leaves project settings unchanged and expires when the Ask closes. A bare command waits for a task. Unquoted `no-ag [task]`, `no-ag: [task]` or `no-ag, [task]` skips the entire Agentflow protocol for that submitted message, including notebook capture and closeout. Quoted mentions and conditional statements do not activate it; the next ordinary message resumes the workflow; `fast-lane` also skips delegation, new streams, and independent review.
+
 The notebook keeps the conversation, so a fresh session can resume an unfinished request with `godev`. With Git, Agentflow normally commits completed work and pushes when a remote exists; tell it when you want local work only.
+
+## Shared notebooks
+
+`notebook-ownership: on|off` is optional and defaults to `off`, including when omitted. On gives one session control of an active notebook round; off allows sessions to mix messages, decisions and replies. Both modes retain file locks, safe paths, current-round checks, unchanged snapshots and stream routing. Off preserves existing ownership records. Use `notebook-ownership: on` when a notebook may be shared. Turning it back on may require explicit recovery of a retained record; no noticeable startup speed gain has been proven.
+
+Codex records later owner messages automatically. Claude keeps startup capture and its completion-checking Stop hook, but the assistant must manually save later actual owner messages using the startup `session_id`; generated reports must not enter the Ask. Updating setup removes owned Claude prompt hooks in the selected scope. Older global installations need their own update and hook migration; restart when prompted.
 
 ## Check installation
 
@@ -84,14 +96,22 @@ node "$HOME/.claude/skills/agentflow/scripts/setup.js"
 
 </details>
 
+## Windows and contributor tests
+
+- Installation does not require running the regression suite. Contributors can find the test commands in the [script reference](skills/agentflow/scripts/README.md).
+
+- This fork keeps native Windows support, including the background looper. The [platform workflow](.github/workflows/platform-tests.yml) tests Windows and Linux with Node.js 24. Fixtures requiring Unix terminals or process tables skip on Windows; these skips do not verify the corresponding Windows behavior.
+
 ## Read next
 
 - [Everyday user guide](skills/agentflow/docs/AG_GUIDE.md), with the YouTube introduction.
 
 - [繁體中文使用指南](skills/agentflow/docs/AG_GUIDE.zh-tw.md).
 
-- [Changelog](docs/CHANGELOG.md), newest version first.
+- [Brief for a new assistant](skills/agentflow/docs/agent-brief.md), for orientation before using the installed skill.
+
+- [Changelog](CHANGELOG.md), newest version first.
 
 - [Script reference](skills/agentflow/scripts/README.md), for technical setup and recovery.
 
-Project settings live in `ag.json`, using the version-8 configuration format. Type `settings` to inspect them. Existing v7 files migrate conservatively when opened. `allowed-worker` is an unordered permission list of external, internal, and host routes; its order has no execution meaning. `cli-provider` filters only external profiles. Model profiles live under `external-workers`, and advisor choices under `pipeline-roles`.
+Project settings live in `ag.json`, using the version-8 configuration format. Type `settings` to inspect them. Startup fills properties missing from the latest template and reports invalid saved values with suggestions; it asks before changing any wrong value. Unsafe invalid settings still stop startup. Existing v7 files migrate conservatively when opened. `allowed-worker` is an unordered permission list of external, internal, and host routes; its order has no execution meaning. `cli-provider` filters only external profiles. Model profiles live under `external-workers`, and advisor choices under `pipeline-roles`.
