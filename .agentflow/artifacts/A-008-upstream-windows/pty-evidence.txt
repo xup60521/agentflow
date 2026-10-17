@@ -1,0 +1,25 @@
+Command: node skills/agentflow/scripts/ownership-controls-journey.js
+Exit code: 0
+Terminal: /dev/pts/4
+Exit: 0
+Exit: 0
+stdin: first owner request
+Exit: 0
+stdin: foreign request must refuse
+Exit: 1
+Exit: 0
+Exit: 0
+stdin: second session request with ownership off
+Exit: 0
+stdin: third session request with ownership off
+Exit: 0
+Exit: 0
+Exit: 0
+stdin: re-enabled foreign request must refuse
+Exit: 1
+Git baseline: 2eeeb04c3961d86c2472fd008b63890621caae5b
+Git status: M .agentflow/devlog.md
+ M ag.json
+PASS: on refuses another session; off permits two sessions; re-enabling refuses; retained ownership metadata stays byte-identical; no remote.
+Fixture retained: /tmp/agf-ownership-pty-FfRkt5
+

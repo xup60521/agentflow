@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: A-007 紀錄推送至 origin/main，未 rebase main.
+Current commit: upstream 80fcd7f 已合併，產品 311fe7e 與 A-008 紀錄推送 origin/main.
 
-Tests/scenarios: 隔離 rebase 發現兩個衝突；abort 後乾淨.
+Tests/scenarios: Windows/Linux CI PASS；PTY PASS；完整 suite 12 個上游既有失敗.
 
 Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: 上游已 fetch；試跑已中止；只向 fork 推送紀錄.
+Proven: Windows 與跨機器功能保留；獨立複審 PASS；只推送 fork.
 
-Open: rebase 尚未完成；既有未提交修改保留.
+Open: 12 個上游既有測試失敗；八個既有未提交修改保留.
 
-Next: 獨立分支整合上游與處理衝突.
+Next: await the owner.
 
-Artifacts: /tmp/agentflow-A007-rebase-20261017.
+Artifacts: .agentflow/artifacts/A-008-upstream-windows/.
 
 Archived eras: none.
 
@@ -541,5 +541,91 @@ Streams: none.
 ---
 
 # → Ask / A-008 (zup-swift-book)
+
++ My fork is aimed at windows support and cross-machine development. Go try that
+
+---
+
+## [RUN-001] Event — 2026-10-17 20:21:07 +0800 (A-008)
+
+- 接受補充範圍：以 Windows 支援與跨機器開發為 fork 的整合原則，採 direct 路線合併上游已發布變更，不新增產品功能；在隔離 clone 的 integrate/upstream-windows-20261017 分支保留已發布歷史。
+- 上游合併遇到 22 個衝突檔，正在逐項保留 fork 的 Windows、OpenCode、.env 連結及可共享的 host 設定，接入上游修正。Tracker：artifacts/A-008-upstream-windows/tracker.md。
+
+## [RUN-002] Event — 2026-10-17 20:26:59 +0800 (A-008)
+
+- 整合提交 59c8646 已推送至 fork 的 integrate/upstream-windows-20261017，兩個 parent 為既有 fork ea1612d 與 upstream 80fcd7f；主工作區 main 與既有未提交修改未整合或覆寫。
+- 本機平台 suite 330 PASS/11 native skip、agf 平台與 .env/CRLF/cleanup focused 12 PASS；完整 suite 1503 PASS/12 FAIL/61 skip。未修改上游 baseline 為 1478 PASS/19 FAIL/53 skip，整合後的失敗名稱全包含於 baseline，保留報告而不修無關上游問題。
+- 新增 Windows/Linux Node24 CI，Ubuntu job 已 PASS，Windows job 執行中。T3 independent review r1 已派送 codex/gpt-6.1-sol/high，taskId 尾碼 agentflow-A008-review-r1，唯讀為交辦要求、未工具強制；報告及規劃證據保存在隔離分支的 .agentflow/artifacts/A-008-upstream-windows/。
+
+## [RUN-003] Event — 2026-10-17 20:28:57 +0800 (A-008)
+
+- Windows 原生 CI 首輪 316 PASS/8 FAIL/8 skip；失敗為 8.3 短路徑導致 fixture 注入未命中，以及 fork 舊封存測試與上游保留最新完成回合的規則不符。已修 fixture native realpath 與 history 預期，提交並推送 8cb804c，Linux 對應 105 項測試為 95 PASS/10 skip。
+- 實際 PTY journey PASS：/dev/pts/4，驗證 ownership on 跨 session 拒絕、off 多 session 寫入、恢復 on 再拒絕，原 owner metadata bytes 不變；所有預期 exit code 與 Git/檔案狀態均核對。第二輪原生 CI 39032638534 執行中。
+- 範圍核對：隔離分支只改上游合併、必要衝突解法與 Windows/Linux 測試；根工作區僅 notebook 與 tracker，既有 .agents/ag.json/skills-lock.json 外來修改保留；tracker 1/3 完成。
+
+## [WIP-001] Checkpoint — 2026-10-17 20:28:57 +0800 (A-008)
+
+- **Finished:** 上游合併與 Windows CI fixture 修正已推送 fork 分支，平台 Linux tests 與實際 PTY journey 通過；已比較完整上游 baseline。
+
+- **Running now:** 原生 Windows/Linux 第二輪 CI 與 T3 independent review r1。
+
+- **Still to do:** 檢查 CI、處理審查阻擋項目、對最終提交完成審查與整合交付。
+
+- **Next work action:** 讀取第二輪 Windows CI 結果與審查報告。
+
+- **Checks:** [x] tracker.md | [x] devlog RUN | [x] scope matches tracker
+
+## [RUN-004] Event — 2026-10-17 20:31:06 +0800 (A-008)
+
+- 獨立審查 r1 判定 Outcome BLOCKING、Minimality PASS、Conformance PASS；兩個 blocker 是首輪 Windows fixture 問題，已由 8cb804c 修正，Windows 第二輪第一階段 324 PASS/0 FAIL/8 skip 證明已消除。
+- 第二輪 agf focused 另發現 3 個失敗；已修 Git global-config 空檔 fixture，並讓 Windows 共用 real_path 使用 native 解析、worktree registry 復用 same_folder，處理 junction/短路徑別名。Linux ignore/cleanup/ditch 64 PASS，提交 311fe7e 已推送 fork，原生第三輪 CI 39032803759 待結果。
+
+## [RUN-005] Event — 2026-10-17 20:33:53 +0800 (A-008)
+
+- 原生 CI 39032803759 已完成：Windows 與 Ubuntu 均 SUCCESS，精確 head 311fe7e。Windows 第一階段 324 PASS/0 FAIL/8 skip、第二階段 14 PASS；Ubuntu 第一階段 330 PASS/0 FAIL/11 skip、第二階段 12 PASS。
+- 已確認整合分支與主工作區目前髒檔沒有路徑交集，可在不覆寫既有修改的情況下快轉。T3 independent review r2 已派送，覆核 8cb804c、311fe7e、原生 CI 證據與 r1 異議，taskId 尾碼 agentflow-A008-review-r2；待複審後合回 fork main。
+
+## [RUN-006] Event — 2026-10-17 20:38:08 +0800 (A-008)
+
+- 最終獨立複審對 311fe7e 的 Verdict、Outcome、Minimality、Conformance 皆 PASS；main 已由 ea1612d 快轉至受審來源，八個既有髒檔 SHA-256 逐一核對不變。已檢查最終差異與每個新增紀錄，只保存同一份已審查證據；tracker 3/3 PASS。
+
+# ← Reply / A-008
+
+* _2026-10-17 20:38:08 +0800 (gpt-6.1-sol/medium)_
+
+## [SUMMARY]
+
+- 已將上游 8.4.15 合併到你的 fork main，保留 Windows 與跨機器開發功能。
+
+- Windows、Linux CI 與獨立複審通過；完整測試仍保留 12 項上游既有失敗。
+
+## [FINAL REPORT]
+
+1. 整合上游並維持 fork 的用途
+
+   - 成功：採合併方式保留已發布歷史，納入 upstream `80fcd7f`；最終產品提交為 `311fe7e`。保留 PowerShell、Unicode、exe/cmd 啟動、行程取消、Windows looper、CRLF、大小寫與 junction 路徑保護，以及工作區 `.env` 連結、共享設定和 OpenCode。
+
+   - 已合回並推送到 `xup60521/agentflow` 的 main。整合分支 `integrate/upstream-windows-20261017` 保留；沒有向 `agfnow/agentflow` 推送，也沒有強制推送。原有八個未提交檔案的 SHA-256 全部不變，未重裝或覆寫既有 skill 副本。
+
+2. 驗證與限制
+
+   - [Windows/Linux 原生 CI](https://github.com/xup60521/agentflow/actions/runs/39032803759) 在精確產品提交 `311fe7e` 上通過，涵蓋 PowerShell、原生啟動與取消、looper，以及 `.env`、CRLF、工作區別名與清理保護。實際 PTY journey 及獨立複審也通過。
+
+   - 完整 Linux suite 為 1503 PASS、12 FAIL、61 skip；12 個失敗名稱全部已存在於未修改上游的 baseline，不宣稱全套通過。後續 Windows 修正另以 64 項相關測試、95 項 notebook/fixture 測試及原生 CI 驗證，詳見紀錄。
+
+   - Key Records — read these first
+
+     [validation.md](artifacts/A-008-upstream-windows/validation.md) 保存平台結果、上游既有失敗與驗證範圍。
+
+     [review-r2.md](artifacts/A-008-upstream-windows/review-r2.md) 保存最終獨立複審及前輪問題已解決的依據。
+
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+---
+
+# → Ask / A-009 (zup-swift-book)
 
 +
