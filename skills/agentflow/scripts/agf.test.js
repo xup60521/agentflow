@@ -692,8 +692,14 @@ test('ignore update leaves project skills and shared host settings trackable', (
 	try {
 		execFileSync('git', ['init', '-q'], { cwd: dir })
 		agf.update_ignore_file(dir)
-		const env = { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1', XDG_CONFIG_HOME: dir }
-		const ignored = file => spawnSync('git', ['check-ignore', '-q', '--no-index', file], { cwd: dir, env }).status === 0
+		const global_config = path.join(dir, '.git', 'empty-global-config')
+		fs.writeFileSync(global_config, '')
+		const env = { ...process.env, GIT_CONFIG_GLOBAL: global_config, GIT_CONFIG_NOSYSTEM: '1', XDG_CONFIG_HOME: dir }
+		const ignored = file => {
+			const result = spawnSync('git', ['check-ignore', '-q', '--no-index', file], { cwd: dir, env, encoding: 'utf8' })
+			assert.ok(result.status === 0 || result.status === 1, result.stderr || result.error?.message)
+			return result.status === 0
+		}
 		for (const file of ['.claude/settings.local.json', '.claude/settings.json.agentflow-backup', '.codex/hooks.json', '.worktrees/a/x']) assert.ok(ignored(file), file)
 		for (const file of ['.claude/skills/agentflow/SKILL.md', '.claude/settings.json', '.codex/config.toml', '.opencode/plugins/x.js']) assert.ok(!ignored(file), file)
 	} finally { drop(dir) }

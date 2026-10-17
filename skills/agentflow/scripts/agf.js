@@ -1067,7 +1067,7 @@ const registered_worktrees = (repo) => {
 }
 
 const real_path = (value) => {
-	try { return fs.realpathSync(value) } catch { return path.resolve(value) }
+	try { return process.platform === 'win32' ? fs.realpathSync.native(value) : fs.realpathSync(value) } catch { return path.resolve(value) }
 }
 
 // Running-host guards: win32 folders are case-insensitive, so a spelling that
@@ -2160,7 +2160,7 @@ const deletion_worktree = (repo, key, wt, allow_present) => {
 		const space = line.indexOf(' ')
 		return space < 0 ? [line, true] : [line.slice(0, space), line.slice(space + 1)]
 	})))
-	const target = records.find(record => record.worktree && real_path(record.worktree) === real_path(wt))
+	const target = records.find(record => record.worktree && same_folder(record.worktree, wt))
 	if (records.some(record => record.branch === `refs/heads/${key}` && record !== target)) return { error: `branch ${key} is in use by another worktree` }
 	if (target && (!allow_present || target.branch !== `refs/heads/${key}` || target.locked || target.prunable)) return { error: `folder .worktrees/${key} no longer identifies the expected stream worktree` }
 	if (fs.existsSync(wt) !== Boolean(target)) return { error: `folder .worktrees/${key} does not match Git's worktree registration` }
