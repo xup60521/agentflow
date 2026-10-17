@@ -13,7 +13,7 @@ process.env.CODEX_THREAD_ID = session;
 process.env.CODEX_SESSION_ID = session;
 
 const fixture = (history = '', open = '+ current request\n') => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-compact-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'agf-compact-')));
   const notebook = '.agentflow/devlog.md';
   fs.mkdirSync(path.join(root, '.agentflow'));
   const config = settings.template_for_host('codex');
@@ -201,15 +201,17 @@ for (const invocation of ['canonical', 'case-alias', 'case-alias-capture']) test
 });
 
 test('compaction extends an archive stored under a case alias without respelling it', t => {
-  const prior = closed('A-001', 'already archived');
-  const recent = closed('A-002', 'just completed');
-  const f = fixture(recent);
+  const prior = closed('A-000', 'already archived');
+  const recent = closed('A-001', 'just completed');
+  const latest = closed('A-002', 'keep latest live');
+  const f = fixture(recent + latest);
   const stored = path.join(f.root, '.agentflow/devlog.ARCHIVE.md');
   fs.writeFileSync(stored, prior);
   if (!fs.existsSync(f.archive)) { t.skip('native case alias requires a case-insensitive volume'); return; }
   compact(f);
   assert.deepEqual(fs.readdirSync(path.dirname(stored)).filter(name => /archive/iu.test(name)), ['devlog.ARCHIVE.md']);
   assert.deepEqual(fs.readFileSync(stored), Buffer.from(prior + recent));
+  assert.ok(fs.readFileSync(f.file, 'utf8').includes(latest));
 });
 
 test('archive collision and symlink refuse compaction without changing live bytes', () => {

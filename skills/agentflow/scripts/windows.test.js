@@ -28,7 +28,7 @@ test('PowerShell shortcuts preserve arguments and support managed replacement', 
   assert.equal(setup.uninstall_content('powershell', content), '')
 })
 test('PowerShell executes shortcuts with literal paths and forwards arguments', { skip: process.platform !== 'win32' }, () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "agf O'Brien "))
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "agf O'Brien ")))
   try {
     const script = path.join(root, 'agf.js')
     fs.writeFileSync(script, 'process.stdout.write(process.argv[2])')

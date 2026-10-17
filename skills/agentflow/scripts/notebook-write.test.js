@@ -173,7 +173,7 @@ node_test.test('first captured instruction replaces the empty scaffold and permi
 const CHECKS = '- **Checks:** [x] tracker.md | [x] devlog RUN | [x] scope matches tracker';
 const recent_local_timestamp = () => format_local_timestamp(new Date(Date.now() - 120000));
 
-const make_root = () => node_fs.realpathSync(node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'agentflow-notebook-write-')));
+const make_root = () => node_fs.realpathSync.native(node_fs.mkdtempSync(node_path.join(node_os.tmpdir(), 'agentflow-notebook-write-')));
 
 const run_writer = (root, args) => node_child_process.spawnSync(process.execPath, [SCRIPT, ...args], {
   cwd: root,
