@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: upstream 80fcd7f 已合併，產品 311fe7e 與 A-008 紀錄推送 origin/main.
+Current commit: A-009 T3 orchestrator 設計 dacf056 與審查紀錄推送 origin/main.
 
-Tests/scenarios: Windows/Linux CI PASS；PTY PASS；完整 suite 12 個上游既有失敗.
+Tests/scenarios: delegation-route 基線 27 PASS；T3 設計審查 PASS；未實作.
 
 Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: Windows 與跨機器功能保留；獨立複審 PASS；只推送 fork.
+Proven: 最小設計已完成並經 T3 獨立審查通過.
 
-Open: 12 個上游既有測試失敗；八個既有未提交修改保留.
+Open: 等待 Design Go: dacf056；八個既有未提交修改保留.
 
-Next: await the owner.
+Next: 取得 Design Go 後實作原生派工接合.
 
-Artifacts: .agentflow/artifacts/A-008-upstream-windows/.
+Artifacts: .agentflow/artifacts/A-009-t3-orchestrator/.
 
 Archived eras: none.
 
@@ -627,5 +627,65 @@ Streams: none.
 ---
 
 # → Ask / A-009 (zup-swift-book)
+
++ Agentflow 有external runner 但在t3 code 環境下，希望可以使用其orchestrator
+
+---
+
+## [RUN-001] Event — 2026-10-18 13:42:22 +0800 (A-009)
+
+- 已確認目前已有一般 native-tool selection、原生 execution record 與 T3 派工規則；缺口在 threeways 先要求外部 runner 參數、選 internal 後直接 UNRESOLVED，以及 pending 無可恢復原生完成接合。
+- live T3 catalog 確認 appOwnedSubagents、asyncPolling、cancellation 可用；目前設定已允許 internal。現有 delegation-route 基線 27 PASS。本輪不修改 dirty ag.json 或既有安裝副本。
+- 採 direct 設計路線，保存最小接合設計 artifacts/A-009-t3-orchestrator/design.md，重用現有 selector/validator/queue handoff，不另建 scheduler。派工與取消／驗收控制屬重大生命週期變更，依 skill 133 行的精確 Design Go 門檻先完成可審閱設計，尚未修改產品程式。
+
+## [RUN-002] Event — 2026-10-18 13:43:33 +0800 (A-009)
+
+- 設計提交 dacf056 已固定；透過 T3 delegate_task 派出獨立設計審查，codex/gpt-6.1-sol、高 effort，taskId 尾碼 agentflow-A009-design-review-r1。這是實際使用 orchestrator，沒有另起 external CLI。
+- 本輪檢查重點為現有介面能否再復用、原生 pending/resume/取消與同 task 綁定是否完整，以及寫入 clone 的最小範圍；不重寫 standalone looper，不新增 scheduler 或 provider SDK。
+
+## [RUN-003] Event — 2026-10-18 13:46:31 +0800 (A-009)
+
+- T3 設計獨立審查完成，dacf056 的 Verdict、Outcome、Minimality、Conformance 全部 PASS；host 已讀取完整報告並核對現有 clone helper exports、設計目標與範圍，沒有重大未決設計事項。產品程式仍未修改，等待精確 Design Go。
+
+# ← Reply / A-009
+
+* _2026-10-18 13:46:31 +0800 (gpt-6.1-sol/medium)_
+
+## [SUMMARY]
+
+- T3 orchestrator 接合設計已完成並通過獨立審查；尚未修改產品程式，實作等待設計核准。
+
+- 目標是在 T3 互動環境使用內建派工，其他環境保留 external runner；不新增 scheduler 或重寫 standalone looper。
+
+## [FINAL REPORT]
+
+1. 在 T3 Code 使用其 orchestrator
+
+   - 已查證一般 native selection、execution record 與互動 queue handoff 都已存在，也已實際用 T3 delegate_task 執行本輪設計審查。真正缺口在 threeways：它預先要求外部 runner 參數，選到 internal 後仍回 UNRESOLVED，沒有原生等待與恢復完成的接合。
+
+   - 已保存最小設計：重用既有 selector、validator、clone helpers 和 report/resolution 檢查；T3 寫入工作在無 remotes 的 disposable clone 執行。處理同 task 綁定、pending、取消後停止證據、不可覆寫重試、三次啟動上限及即時 model/effort 配對，保留非 T3 的 external runner。
+
+   - 設計提交 `dacf05601a5e09d3ca45ae75d9b5fd7a72e81b2d` 的 Verdict、Outcome、Minimality、Conformance 均 PASS。既有 delegation-route 基線 27 PASS；本輪沒有產品修改，因此未重跑產品 suite。既有八個未提交檔案與安裝副本未更動，紀錄僅推送你的 fork。
+
+   - Key Records — read these first
+
+     [design.md](artifacts/A-009-t3-orchestrator/design.md) 說明最小方案、失敗處理、不變條件及驗收方式。
+
+     [review-r1.md](artifacts/A-009-t3-orchestrator/review-r1.md) 說明獨立審查結論及可重用的現有介面。
+
+   - 需要核准的原因來自目前啟用的 `.agents/skills/agentflow/SKILL.md:133`，原文為「Source starts only after `Design Go: <7-hex-commit-prefix>`」。本次會改派工、取消和完成驗收的生命週期，依這條規則必須先核准固定設計；這不是工具自動審核拒絕。
+
+
+## Questions (batched — each with a suggested default)
+
+1. 是否依已通過審查的設計開始實作？
+
+   - Suggested default: `Design Go: dacf056`
+
+   - ans:
+
+---
+
+# → Ask / A-010 (zup-swift-book)
 
 +
