@@ -547,8 +547,8 @@ test('threeways explicit native choice returns a handoff without external profil
 	assert.equal(handoff.task_prompt, fs.readFileSync(artifact(repo_root, 'threeways-brief-r1.md'), 'utf8'))
 	assert.equal(fs.existsSync(artifact(repo_root, 'threeways-report-r1.md')), false)
 	assert.equal(fs.existsSync(artifact(repo_root, 'threeways-resolution-r1.md')), false)
-	// Re-invoking the same round reuses the same brief and clientRequestId.
-	const retried = await route.execute_threeways_debate(facts, forbid_external())
+	// Re-invoking the same round with the host-persisted context reuses the same brief and clientRequestId.
+	const retried = await route.execute_threeways_debate({ ...facts, native_context: executed.frozen_context }, forbid_external())
 	assert.equal(retried.native_handoff.client_request_id, handoff.client_request_id)
 	const changed = await route.execute_threeways_debate({ ...facts, brief_text: valid_brief().replace('one decision', 'two decisions') }, forbid_external())
 	assert.equal(changed.valid, false)
@@ -751,4 +751,103 @@ test('non-native threeways keeps requiring external argv and still never launche
 	assert.match(refused.selection.requirement, /forbidden by allowed-worker/)
 	assert.equal(refused.native_handoff, undefined)
 	assert.equal(refused.consensus, 'UNRESOLVED')
+})
+
+const unavailable_native = () => ({ internal: [{ candidate_id: 't3:codex:gpt-6.1-sol', available: false, reason: 'catalog no longer lists the model' }] })
+const no_results = repo_root => ['threeways-report-r1.md', 'threeways-resolution-r1.md'].every(name => !fs.existsSync(artifact(repo_root, name)))
+
+test('native same-round re-entry reuses the persisted context and never mints a new dispatch identity', async () => {
+	const repo_root = fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-'))
+	const { started, context } = await native_start(repo_root)
+	const other_source = { source_kind: 'git', value: 'dacf05601a5e09d3ca45ae75d9b5fd7a72e81b2d' }
+	// Without the persisted context an existing brief is uncertain: no handoff, no identity, no results.
+	for (const extra of [{}, { source_identity: other_source }, { client_request_id: 'threeways-forged' }]) {
+		const blind = await route.execute_threeways_debate(native_facts(repo_root, extra), forbid_external())
+		assert.equal(blind.valid, true, blind.error)
+		assert.equal(blind.consensus, 'PENDING')
+		assert.equal(blind.state, 'uncertain')
+		assert.equal(blind.native_handoff, undefined)
+		assert.equal(blind.frozen_context, undefined)
+		assert.equal(blind.retry_required, false)
+		assert.equal(blind.fallback_permitted, false)
+		assert.ok(no_results(repo_root))
+	}
+	// An unbound persisted context returns the identical handoff, even if the live candidate effort changed.
+	const effort_drift = native_facts(repo_root, { native_context: started.frozen_context })
+	effort_drift.capabilities.internal[0].effort = 'medium'
+	const retried = await route.execute_threeways_debate(effort_drift, forbid_external())
+	assert.equal(retried.consensus, 'PENDING', retried.error)
+	assert.deepEqual(retried.native_handoff, started.native_handoff)
+	assert.deepEqual(retried.frozen_context, started.frozen_context)
+	// A bound context never yields another delegate_task handoff.
+	const bound = await route.execute_threeways_debate(native_facts(repo_root, { native_context: context }), forbid_external())
+	assert.equal(bound.consensus, 'PENDING', bound.error)
+	assert.equal(bound.native_handoff, undefined)
+	assert.deepEqual(bound.frozen_context, context)
+	assert.deepEqual(bound.native_task, { task_id: 'task-1', child_thread_id: 'child-1' })
+	// The persisted context must match this round's source, request id, and brief.
+	for (const extra of [{ source_identity: other_source }, { client_request_id: 'threeways-forged' }]) {
+		const refused = await route.execute_threeways_debate(native_facts(repo_root, { native_context: context, ...extra }), forbid_external())
+		assert.equal(refused.valid, false)
+		assert.equal(refused.native_handoff, undefined)
+	}
+	const elsewhere = await route.execute_threeways_debate(native_facts(fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-')), { native_context: context }), forbid_external())
+	assert.equal(elsewhere.valid, false)
+	assert.equal(elsewhere.native_handoff, undefined)
+	const forged = await route.execute_threeways_debate(native_facts(repo_root, { native_context: { ...context, brief_sha256: '0'.repeat(64) } }), forbid_external())
+	assert.equal(forged.valid, false)
+	assert.ok(no_results(repo_root))
+})
+
+test('native request identity covers launch controls and bind/complete reject a different effort', async () => {
+	const high_root = fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-'))
+	const high = await route.execute_threeways_debate(native_facts(high_root), forbid_external())
+	const medium_facts = native_facts(fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-')))
+	medium_facts.capabilities.internal[0].effort = 'medium'
+	const medium = await route.execute_threeways_debate(medium_facts, forbid_external())
+	assert.equal(medium.native_handoff.effort, 'medium')
+	assert.notEqual(medium.native_handoff.client_request_id, high.native_handoff.client_request_id)
+	assert.equal(route.bind_threeways_native_task(high.frozen_context, { taskId: 'task-1', childThreadId: 'child-1', effort: 'medium' }).valid, false)
+	assert.equal(route.bind_threeways_native_task(high.frozen_context, { taskId: 'task-1', childThreadId: 'child-1', model: 'gpt-other' }).valid, false)
+	const { context } = await native_start(fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-')))
+	const done = { taskId: 'task-1', status: 'completed', hasPendingChildRuns: false, summary: native_report() }
+	assert.equal(completion(fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-')), context, { ...done, effort: 'medium' }).valid, false)
+})
+
+test('native resume never finalizes or offers retry when selection inputs change during a started round', async () => {
+	const repo_root = fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-'))
+	const { context } = await native_start(repo_root)
+	const forbidden = native_facts(repo_root, { native_context: context })
+	forbidden.config.switches['allowed-worker'] = ['external']
+	const changes = [
+		native_facts(repo_root, { native_context: context, capabilities: unavailable_native() }),
+		native_facts(repo_root, { capabilities: unavailable_native() }),
+		native_facts(repo_root, { native_context: context, task: { executor_choice: { kind: 'external', reason: 'switch writer' } } }),
+		forbidden,
+	]
+	for (const facts of changes) {
+		const resumed = await route.execute_threeways_debate(facts, forbid_external())
+		assert.notEqual(resumed.consensus, 'UNRESOLVED')
+		assert.notEqual(resumed.consensus, 'AGREE')
+		assert.equal(resumed.retry_required ?? false, false)
+		assert.equal(resumed.fallback_permitted ?? false, false)
+		assert.equal(resumed.native_handoff, undefined)
+		assert.ok(no_results(repo_root))
+	}
+	const later = completion(repo_root, context, { taskId: 'task-1', childThreadId: 'child-1', status: 'completed', hasPendingChildRuns: false, summary: native_report() })
+	assert.equal(later.consensus, 'AGREE', later.error)
+})
+
+test('native first-launch selection failure starts nothing and leaves the round launchable', async () => {
+	const repo_root = fs.mkdtempSync(path.join(os.tmpdir(), 'threeways-native-'))
+	const refused = await route.execute_threeways_debate(native_facts(repo_root, { capabilities: unavailable_native() }), forbid_external())
+	assert.equal(refused.consensus, 'UNRESOLVED')
+	assert.equal(refused.worker_started, false)
+	assert.equal(refused.retry_required, false)
+	assert.equal(refused.native_handoff, undefined)
+	assert.equal(fs.existsSync(artifact(repo_root, 'threeways-brief-r1.md')), false)
+	assert.ok(no_results(repo_root))
+	const started = await route.execute_threeways_debate(native_facts(repo_root), forbid_external())
+	assert.equal(started.consensus, 'PENDING', started.error)
+	assert.ok(started.native_handoff)
 })

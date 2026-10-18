@@ -121,6 +121,7 @@ test('advanced feature rulebooks remain complete and mechanically bounded', () =
 	assert.match(delegation, /`hasPendingChildRuns` other than `false` are pending or uncertain: never finalize, retry, or fall back/)
 	assert.match(delegation, /owner stop still needs renewed authorization/)
 	assert.match(delegation, /`complete_threeways_native`.*never launches or rewrites the brief/s)
+	assert.match(delegation, /`facts.native_context`.*Re-entry never reselects.*existing brief is `uncertain`/s)
 	assert.match(streams, /finish --prep/)
 	assert.match(streams, /finish --deliver/)
 	assert.match(looper, /select_frozen_ready_plans/)
