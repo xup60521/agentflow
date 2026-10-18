@@ -1,0 +1,15 @@
+{
+  "valid": true,
+  "stage_id": "threeways",
+  "round": 1,
+  "artifacts": {
+    "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r1.md",
+    "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r1.md",
+    "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r1.md"
+  },
+  "state": "pending",
+  "consensus": "PENDING",
+  "retry_required": false,
+  "fallback_permitted": false,
+  "reason": "task is running"
+}

@@ -1,0 +1,18 @@
+{
+  "taskId": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+  "childThreadId": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+  "childRunId": "run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253A3aa81310-9185-456c-9315-625a58d5c7ee%253Adelegate-task%253Athreeways-r1-bba92c23bc0b847c587f9397:ordinal:1",
+  "childNodeId": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+  "status": "running",
+  "workState": "working",
+  "hasPendingChildRuns": false,
+  "latestTerminalRunId": null,
+  "latestTerminalStatus": null,
+  "latestTerminalSummary": null,
+  "latestTerminalResultContextTransferId": null,
+  "providerInstanceId": "codex",
+  "model": "gpt-6.1-sol",
+  "summary": null,
+  "resultContextTransferId": null,
+  "waitTimedOut": false
+}

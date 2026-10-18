@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: A-009 T3 orchestrator 設計 dacf056 與審查紀錄推送 origin/main.
+Current commit: 實作 caef93b；PR #4 交付紀錄保存於Git歷史.
 
-Tests/scenarios: delegation-route 基線 27 PASS；T3 設計審查 PASS；未實作.
+Tests/scenarios: route41、rules1、language2 PASS；真實PTY/T3完成與replay PASS；GPT審查PASS.
 
 Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: 最小設計已完成並經 T3 獨立審查通過.
+Proven: T3 native handoff/resume/completion；Result Go已取得；fork PR #4已建立.
 
-Open: 等待 Design Go: dacf056；八個既有未提交修改保留.
+Open: Windows由owner另測；PR尚未合併；八個既有髒檔保留.
 
-Next: 取得 Design Go 後實作原生派工接合.
+Next: owner測試Windows並review PR #4.
 
-Artifacts: .agentflow/artifacts/A-009-t3-orchestrator/.
+Artifacts: .agentflow/artifacts/A-010-t3-orchestrator/.
 
 Archived eras: none.
 
@@ -687,5 +687,101 @@ Streams: none.
 ---
 
 # → Ask / A-010 (zup-swift-book)
+
++ Design Go: dacf056
+  使用opus 5.5 medium 來實作，並使用gpt來review
+
++ Result Go: caef93b
+  file pr 我會另外測windows
+
+---
+
+## [RUN-001] Event — 2026-10-18 15:45:19 +0800 (A-010)
+
+- 已驗證 Design Go: dacf056 精確指向已審查設計 dacf05601a5e09d3ca45ae75d9b5fd7a72e81b2d；實作與 GPT review 已獲授權。選 direct 路線，host 保留規劃、整合與驗收，依擁有者指定委派 Opus 5.5 medium。
+- live catalog 確認 claudeAgent/claude-opus-5-5 的 effort=medium，以及 codex/gpt-6.1-sol 的 reasoningEffort=high 可用。未改模型設定。
+- 已用既有 prepare_clone 建立 /tmp/agentflow-A010-opus-y5Qmmo/clone：Git 資料獨立、remotes=[]、乾淨 HEAD 791420d；保存主工作區八個既有髒檔 SHA-256。這只是工作位置隔離，T3 仍共用 filesystem／permissions，未宣稱 OS sandbox。
+- Tracker：artifacts/A-010-t3-orchestrator/tracker.md，0/3。下一步透過 T3 delegate_task 派出 Opus 實作，不另起 external model CLI。
+
+## [RUN-002] Event — 2026-10-18 15:45:44 +0800 (A-010)
+
+- 已透過 T3 delegate_task 派送實作：claudeAgent/claude-opus-5-5，effort=medium，role=implementation；taskId 尾碼 agentflow-A010-opus-implementation-r1，childThreadId 與完整 brief 保存於 implementation-dispatch-r1.md。
+- 明確禁止 worker 再委派、啟動外部模型 CLI 或寫入主工作區；允許範圍限 clone 中的五個產品檔、必要 terminal journey 與 implementation report。完成後由 host 比較包含 untracked 的完整差異，整合、驗證，再使用 GPT review。
+
+## [RUN-003] Event — 2026-10-18 15:53:59 +0800 (A-010)
+
+- Opus 實作 task 已 completed 且無 pending children，交付 source bc226d1、report e894a0a；host 核對 clone 只改五個允許的產品檔與報告，沒有 remotes、沒有額外 untracked。已將來源快轉整合至本機 main，報告另保存，不推送未驗收實作。
+- host 驗證 route 37 PASS、相關 prompt delegation 契約 1 PASS、language 2 PASS；八個既有髒檔 SHA-256 完全不變。worker 的 red 記錄為 8 個新失敗，green 全過；32KiB budget 和 release alignment 為原有 baseline，未修無關檔。
+- 下一步以真實 native handoff／T3 delegate_task 派送 GPT review，並用原始 task_status 完成同一輪及重送檢查，證明實際工具欄位與 pending 行為。
+
+## [RUN-004] Event — 2026-10-18 15:56:50 +0800 (A-010)
+
+- 真實 PTY /dev/pts/4 執行公開 threeways CLI，exit 0、PENDING，只寫 immutable brief；native-pty-journey.cjs 與 native-pty-proof-r1.json 可重用並保存可見命令、終端及結果狀態。
+- 使用 handoff 原文及穩定 clientRequestId threeways-r1-bba92c23bc0b847c587f9397 派出 codex/gpt-6.1-sol high 獨立審查。taskId: node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397。原始 delegate 回傳與 bound context 保存在 A-010 artifacts。
+- 原始 running 回傳已經 complete_threeways_native 驗證為 PENDING、retry=false、fallback=false，report/resolution 仍不存在。等待 T3 完成通知後讀取 task_status、host 驗收、完成同一輪並驗證 replay，不重派或啟動外部 CLI。
+
+## [RUN-005] Event — 2026-10-18 16:01:40 +0800 (A-010)
+
+- GPT r1 Verdict/Outcome/Conformance BLOCKING、Minimality PASS。R1 同輪重入可改來源/request/effort，R2 候選失效時錯將原生任務結案；host 接受兩項阻擋，不豁免或擴大修其他範圍。
+- 真實 task_status completed、result_available、pending children=false，全文與 review-r1.md 相同；完成接合正確得到 UNRESOLVED，重播 replayed=true 且 brief/report/resolution mtime 全不變。native-status-r1.json 與 native-complete-proof-r1.json 保存證據。
+- 已透過新 T3 task 交回 claudeAgent/claude-opus-5-5 effort=medium 修正，只准原 clone 與原有來源範圍，先補反例 failing tests，再沿既有 host context 修恢復路徑，不新增 registry。完整原 brief 與所有異議保存 implementation-dispatch-r2.md。
+- Correction taskId: node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Aagentflow-A010-opus-correction-r2；childThreadId 同 task 尾碼、thread 前綴。等待完成通知後 host 整合驗證，再以新 GPT task 複審。仍未推送實作。
+
+## [RUN-006] Event — 2026-10-18 16:06:33 +0800 (A-010)
+
+- Opus correction completed 且無 pending children，source22eff43、report8d71440。Host 核對 clean/no-remotes clone，來源只改原五個檔，僅 cherry-pick 來源為本機 caef93b；報告另複製。未推送。
+- 新增四個反例先 red37pass/4fail、green41pass；host 整合後路由41 PASS、advanced rulebook契約1 PASS。八個原有髒檔雜湊不變。修正沿 host-owned native_context，不建立 registry；原 context 已 bound 時只回 task handle，遺失記錄保持 uncertain。
+- 第二輪真實 PTY handoff exit0/PENDING，先保存 frozen context 後派 GPT-6.1-sol high。新 taskId: node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424。原 brief 與前輪全部異議納入新 task，不續舊 child thread。
+- 真實 running 回傳綁定後保持 PENDING。Host 以該 context 讓候選 available=false、effort=medium、choice=external 重入，仍 pending/同task/high且無handoff；缺 context 則 uncertain/no retry/no handoff，皆未寫 report/resolution。原始工具結果與完整證據保存 A-010 native-*-r2.json。等待 GPT 完成通知後收尾、replay及驗收。
+
+## [RUN-007] Event — 2026-10-18 16:09:50 +0800 (A-010)
+
+- GPT round2 對 caef93bdea94a443a81eecbea951be83480781ea 的 Verdict/Outcome/Minimality/Conformance 全部 PASS，R1/R2 已關閉，沒有剩餘產品 blocker。Host 已檢查完整報告與範圍；不追加非阻擋測試建議，reviewer 已補足 effort 不符的獨立原碼行為證據。
+- 真實 raw task_status 為 completed/result_available、pending children=false，summary與review-r2.md相同。Host驗收後 complete_threeways_native 得 AGREE，重播 replayed=true且brief/report/resolution內容及mtime不變；native-status-r2.json與native-complete-proof-r2.json保存證據。
+- Host最終比對五個產品檔、原八個dirty檔SHA-256一致，沒有範圍外產品變更；41 route、1 rulebook與沿用2 language通過。acceptance.md保存六項invariant/七項驗收對照及未跑Windows、既有budget/alignment失敗等限制。Tracker已驗證2/3，剩Result Go與fork交付。
+- 依目前啟用references/closeout.md原文「Consequential work then needs current Result Go for the exact implementation commit」，以及已核准design.md交付順序第4點，等待 Result Go: caef93b。這是明文checkpoint，非工具自動拒絕；尚未推送實作，取得核准後只推fork origin/main。
+
+## [RUN-008] Event — 2026-10-18 17:25:51 +0800 (A-010)
+
+- 已取得 Result Go: caef93b；依最新 owner 要求改以 feature/t3-orchestrator 推送 fork、建立 PR #4，不直接更新 main。PR 已連結 T3 並核對 base/head；Windows 由owner另測。Tracker3/3完成，來源與有效測試/審查未變，只完成記錄交付。
+
+# ← Reply / A-010
+
+* _2026-10-18 17:25:51 +0800 (gpt-6.1-sol/medium)_
+
+## [SUMMARY]
+
+- 已建立 [PR #4](https://github.com/xup60521/agentflow/pull/4)，僅提交至你的 fork，尚未合併 main。
+- Opus 5.5 medium 實作、GPT 複審全 PASS；41 個路由測試與真實 T3 完成／重播通過。
+- Windows 留給你另外測試，原有八個髒檔保持不變。
+
+## [FINAL REPORT]
+
+1. 依核准設計實作 T3 orchestrator
+
+   - 成功：threeways 支援原生派工、等待、保存 context 恢復、完成及無寫入重播，external runner 保留。GPT 第一輪兩項 blocker 已修正，第二輪 Outcome、Minimality、Conformance 全 PASS；Result Go: caef93b 已保存。
+   - Host route 41 PASS、相關 rulebook 契約 1 PASS，未變動 language 契約 2 PASS 沿用；真實 PTY 與 T3 task_status 完成為 AGREE，重播無改寫。既有 budget/alignment 失敗未修，本輪未跑 Windows。
+
+   Key Records — read these first
+
+   [acceptance.md](artifacts/A-010-t3-orchestrator/acceptance.md) 保存驗收結果、範圍與限制。
+
+   [review-r2.md](artifacts/A-010-t3-orchestrator/review-r2.md) 保存 GPT 全 PASS 複審及前輪問題的修正確認。
+
+   [implementation-report-r2.md](artifacts/A-010-t3-orchestrator/implementation-report-r2.md) 說明 Opus 修正、API 恢復規則與紅綠測試。
+
+2. 建立 PR，Windows 由你另測
+
+   - [xup60521/agentflow#4](https://github.com/xup60521/agentflow/pull/4) 以 feature/t3-orchestrator 為來源、你的 main 為目標，已連結本 T3 thread；沒有向 agfnow/agentflow 提交或推送。PR 註明 Windows 由維護者另測。
+
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+
+---
+
+# → Ask / A-011 (zup-swift-book)
 
 +
