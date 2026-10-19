@@ -1,0 +1,70 @@
+{
+  "closed": {
+    "valid": true,
+    "stage_id": "threeways",
+    "round": 2,
+    "artifacts": {
+      "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r2.md",
+      "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r2.md",
+      "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r2.md"
+    },
+    "state": "completed",
+    "consensus": "AGREE",
+    "replayed": false,
+    "retry_required": false,
+    "requires_authorization": false,
+    "fallback_permitted": false,
+    "attempt": {
+      "candidate_id": "t3:codex:gpt-6.1-sol",
+      "kind": "internal",
+      "state": "completed",
+      "actual": {
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "transport": {
+        "tool": "task_status",
+        "handle": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424",
+        "thread_id": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424",
+        "client_request_id": "threeways-r2-3dcead2c6a9433cba6fda424",
+        "worker_started": true,
+        "stop_verified": true
+      }
+    }
+  },
+  "replay": {
+    "valid": true,
+    "stage_id": "threeways",
+    "round": 2,
+    "artifacts": {
+      "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r2.md",
+      "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r2.md",
+      "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r2.md"
+    },
+    "state": "completed",
+    "consensus": "AGREE",
+    "replayed": true,
+    "retry_required": false,
+    "requires_authorization": false,
+    "fallback_permitted": false,
+    "attempt": {
+      "candidate_id": "t3:codex:gpt-6.1-sol",
+      "kind": "internal",
+      "state": "completed",
+      "actual": {
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "transport": {
+        "tool": "task_status",
+        "handle": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424",
+        "thread_id": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424",
+        "client_request_id": "threeways-r2-3dcead2c6a9433cba6fda424",
+        "worker_started": true,
+        "stop_verified": true
+      }
+    }
+  },
+  "no_rewrite": true,
+  "host_acceptance": "PASS; R1/R2 closed, source caef93b, actual task status and report verified; effort check independently verified by reviewer"
+}

@@ -3,6 +3,7 @@
 const settings = require('./ag-settings.js')
 const external_runner = require('./external-runner.js')
 const { executable_name } = require('./executable-launch.js')
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -92,13 +93,17 @@ const launch_threeways_debate = async (facts, dependencies = {}) => {
 	if (dependencies === null || typeof dependencies !== 'object') {
 		return { ...plan, valid: false, error: 'threeways launch requires configured worker selection and external-runner-v1' }
 	}
-	if (facts.runner_options === null || typeof facts.runner_options !== 'object' || Array.isArray(facts.runner_options)) {
-		return { ...plan, valid: false, error: 'threeways launch requires frozen external-runner options' }
+	// An explicit native choice never reaches the external runner, so it needs no runner argv or resolver.
+	const native_choice = explicit_native_choice(facts)
+	if (!native_choice) {
+		if (facts.runner_options === null || typeof facts.runner_options !== 'object' || Array.isArray(facts.runner_options)) {
+			return { ...plan, valid: false, error: 'threeways launch requires frozen external-runner options' }
+		}
+		if (!Array.isArray(facts.runner_arguments) || !facts.runner_arguments.every(argument => typeof argument === 'string')) {
+			return { ...plan, valid: false, error: 'threeways launch requires frozen literal runner_arguments' }
+		}
+		if (Object.hasOwn(facts.runner_options, 'command') || Object.hasOwn(facts.runner_options, 'executable')) return { ...plan, valid: false, error: 'threeways runner command must be derived only from the shared selected action' }
 	}
-	if (!Array.isArray(facts.runner_arguments) || !facts.runner_arguments.every(argument => typeof argument === 'string')) {
-		return { ...plan, valid: false, error: 'threeways launch requires frozen literal runner_arguments' }
-	}
-	if (Object.hasOwn(facts.runner_options, 'command') || Object.hasOwn(facts.runner_options, 'executable')) return { ...plan, valid: false, error: 'threeways runner command must be derived only from the shared selected action' }
 	const requested_tier = settings.threeways_tier(facts.config)
 	if (requested_tier === 'off' || settings.tier_name_error(requested_tier)) return { ...plan, valid: false, error: 'threeways requires a valid configured tier; off is not supported' }
 	const configured_switches = facts.config?.switches || {}
@@ -129,7 +134,7 @@ const launch_threeways_debate = async (facts, dependencies = {}) => {
 	}
 	const capabilities = is_object(facts.capabilities) ? clone(facts.capabilities) : {}
 	let worker = null
-	if (policy.allowed_worker.includes('external')) {
+	if (policy.allowed_worker.includes('external') && !native_choice) {
 		let unavailable
 		try { worker = resolve_worker(facts.worker_selection) } catch (error) {
 			if (!['AG_DISPATCH_NO_PROFILE', 'AG_DISPATCH_TIER_UNAVAILABLE'].includes(error.code)) throw error
@@ -153,11 +158,92 @@ const launch_threeways_debate = async (facts, dependencies = {}) => {
 	const host = facts.host || { id: facts.worker_selection?.active_host || facts.worker_selection?.explicit_host, family: facts.worker_selection?.host_family }
 	const selection = select_executor_action({ ...facts, host, policy, task, capabilities })
 	if (selection.status !== 'selected') return { ...plan, selection, consensus: 'UNRESOLVED', review: 'UNRESOLVED' }
-	if (selection.kind !== 'external') return { ...plan, selection, action: selection.action, review: 'UNRESOLVED', consensus: 'UNRESOLVED', limitation: 'standalone threeways runner cannot execute native or host handoff; coordinator review remains unresolved' }
+	if (selection.kind === 'internal') {
+		// The interactive host performs the real native invoke; this is a pending handoff, not a result.
+		const candidates = Array.isArray(capabilities.internal) ? capabilities.internal : capabilities.internal ? [capabilities.internal] : []
+		const candidate = candidates.find(item => (item?.candidate_id || item?.id || 'internal') === selection.candidate_id) || {}
+		const provider_instance_id = candidate.provider_instance_id || candidate.providerInstanceId
+		const native_handoff = { type: 'native-tool', stage_id: plan.stage_id, round: plan.round, candidate_id: selection.candidate_id, ...(text_value(provider_instance_id) ? { provider_instance_id } : {}), model: selection.usable_model, effort: selection.usable_effort, requested: clone(selection.requested), limitations: [...selection.limitations] }
+		return { ...plan, selection, action: selection.action, runner_id: 'native-tool', review: 'PENDING', consensus: 'PENDING', native_handoff }
+	}
+	if (selection.kind !== 'external') return { ...plan, selection, action: selection.action, review: 'UNRESOLVED', consensus: 'UNRESOLVED', limitation: 'standalone threeways runner cannot execute host handoff; coordinator review remains unresolved' }
 	const selected_worker = worker || { tier: requested_tier, executable: selection.action.command[0], args: selection.action.command.slice(1) }
 	const runner_options = { ...facts.runner_options, command: [...selection.action.command, ...facts.runner_arguments] }
 	const result = await run_external_command(runner_options)
 	return { ...plan, worker: selected_worker, selection, runner_id: 'external-runner-v1', runner: result }
+}
+
+const worker_diagnostic = '# Threeways worker diagnostic\n\nRecord type: HOST-DIAGNOSTIC (not a worker report)\n\nWorker report was missing, malformed, or its runner did not complete; no worker conclusion was accepted.\n'
+const explicit_native_choice = facts => is_object(facts?.task?.executor_choice) && facts.task.executor_choice.kind === 'internal'
+const valid_source_identity = value => is_object(value) && ((value.source_kind === 'git' && /^[0-9a-f]{40}$/u.test(value.value)) || (value.source_kind === 'no-git' && /^[0-9a-f]{64}$/u.test(value.value)))
+const sha256_text = text => crypto.createHash('sha256').update(text).digest('hex')
+const stored_text = text => text.endsWith('\n') ? text : `${text}\n`
+
+// Writes a missing artifact or confirms the recorded one is identical; never overwrites.
+const write_or_match = (filename, text) => {
+	if (fs.existsSync(filename)) {
+		if (fs.readFileSync(filename, 'utf8') !== stored_text(text)) throw new Error(`threeways artifact conflicts with recorded content: ${path.basename(filename)}`)
+		return false
+	}
+	write_immutable(filename, text)
+	return true
+}
+
+// Shared closeout for external and native results: one report and one host resolution per round.
+const finalize_threeways_round = ({ round, filenames, report_text, report_ok, host_resolution, host_disagreement, family_record, limitation }) => {
+	if (!fs.existsSync(filenames.report) && fs.existsSync(filenames.resolution)) throw new Error('threeways resolution exists without its report')
+	// A diagnostic is deliberately not shaped as a worker report: the host must
+	// never fabricate a worker stamp or self-check after a failed invocation.
+	const report_written = write_or_match(filenames.report, report_ok ? report_text : worker_diagnostic)
+	const agreed = report_ok && /^Consensus:\s+AGREE\s*$/mu.test(report_text) && host_disagreement !== true
+	const consensus = agreed ? 'AGREE' : 'UNRESOLVED'
+	const resolution_written = write_or_match(filenames.resolution, `${host_resolution}\n\nWorker family diversity: ${family_record}\n\nWorker family limitation: ${limitation}\n\nConsensus: ${consensus}\n\nAttempts: ${round}\n\nSelf-check: The host recorded the debate resolution without authorizing implementation.\n`)
+	return { consensus, replayed: !report_written && !resolution_written }
+}
+
+const threeways_filenames = (repo_root, artifacts) => Object.fromEntries(Object.entries(artifacts).map(([kind, relative]) => [kind, artifact_path(repo_root, relative)]))
+
+const native_handoff_from = (context, brief_text) => ({
+	type: 'native-tool', stage_id: context.stage_id, round: context.round, candidate_id: context.candidate_id, ...(context.provider_instance_id ? { provider_instance_id: context.provider_instance_id } : {}),
+	model: context.model, effort: context.effort, requested: clone(context.requested), limitations: [...context.limitations],
+	client_request_id: context.client_request_id, brief_path: context.brief_path, brief_sha256: context.brief_sha256, task_prompt: brief_text,
+})
+
+const native_pending = (plan, facts, brief_text, launched) => {
+	const brief_sha256 = sha256_text(brief_text)
+	const source_identity = { source_kind: facts.source_identity.source_kind, value: facts.source_identity.value }
+	const handoff = launched.native_handoff
+	// Stable for retries of this round; a new round, brief, source, or launch control yields a new request id.
+	const client_request_id = text_value(facts.client_request_id) ? facts.client_request_id : `threeways-r${plan.round}-${sha256_text([facts.work_root, plan.round, brief_sha256, source_identity.value, handoff.candidate_id, handoff.provider_instance_id || '', handoff.model, handoff.effort].join('\0')).slice(0, 24)}`
+	const frozen_context = {
+		context_version: 1, stage_id: plan.stage_id, work_root: facts.work_root, round: plan.round, artifacts: { ...plan.artifacts },
+		brief_path: plan.artifacts.brief, brief_sha256, source_identity,
+		candidate_id: handoff.candidate_id, ...(handoff.provider_instance_id ? { provider_instance_id: handoff.provider_instance_id } : {}),
+		model: handoff.model, effort: handoff.effort, requested: clone(handoff.requested), limitations: [...handoff.limitations],
+		client_request_id, task_id: null, child_thread_id: null,
+	}
+	return { ...launched, state: 'handoff', artifacts: plan.artifacts, retry_required: false, native_handoff: native_handoff_from(frozen_context, brief_text), frozen_context }
+}
+
+// Re-entry after the round brief exists: only the host-persisted context may restore the original dispatch.
+// Live selection facts are not consulted, so candidate, policy, or choice changes cannot replace or close the round.
+const resume_threeways_native = (plan, facts, filenames) => {
+	const brief_text = fs.readFileSync(filenames.brief, 'utf8')
+	if (brief_text !== stored_text(facts.brief_text)) return { ...plan, valid: false, error: `threeways artifact conflicts with recorded content: ${path.basename(filenames.brief)}` }
+	const base = { ...plan, runner_id: 'native-tool', review: 'PENDING', consensus: 'PENDING', artifacts: plan.artifacts, retry_required: false, fallback_permitted: false }
+	const context = facts.native_context
+	if (context === undefined || context === null) return { ...base, state: 'uncertain', reason: 'the round brief exists without its persisted native context; recover the context from the host round record before any dispatch' }
+	const refuse = error => ({ ...plan, valid: false, error, retry_required: false, fallback_permitted: false })
+	const error = native_context_error(context, false)
+	if (error) return refuse(error)
+	if (context.work_root !== facts.work_root || context.round !== plan.round) return refuse('native threeways context belongs to another work root or round')
+	if (!valid_source_identity(facts.source_identity) || facts.source_identity.source_kind !== context.source_identity.source_kind || facts.source_identity.value !== context.source_identity.value) return refuse('native threeways source_identity does not match the frozen context')
+	if (context.brief_sha256 !== sha256_text(brief_text)) return refuse('native threeways frozen brief does not match the frozen context')
+	if (facts.client_request_id !== undefined && facts.client_request_id !== context.client_request_id) return refuse('native threeways client_request_id does not match the frozen context')
+	const bound = [context.task_id, context.child_thread_id].filter(value => value !== null && value !== undefined)
+	if (bound.length === 0) return { ...base, state: 'handoff', native_handoff: native_handoff_from(context, brief_text), frozen_context: clone(context) }
+	if (native_context_error(context, true)) return refuse('native threeways context must bind both taskId and childThreadId')
+	return { ...base, state: 'pending', frozen_context: clone(context), native_task: { task_id: context.task_id, child_thread_id: context.child_thread_id }, reason: 'the task is already dispatched; read task_status and call complete_threeways_native' }
 }
 
 const execute_threeways_debate = async (facts, dependencies = {}) => {
@@ -166,14 +252,31 @@ const execute_threeways_debate = async (facts, dependencies = {}) => {
 	if (typeof facts.repo_root !== 'string' || !has_required_sections(facts.brief_text, required_brief_sections) || !has_required_sections(facts.host_resolution, required_resolution_sections)) {
 		return { ...plan, valid: false, error: 'threeways execution requires repository root plus frozen brief and resolution sections' }
 	}
+	const native_choice = explicit_native_choice(facts)
+	const native_round = native_choice || (facts.native_context !== undefined && facts.native_context !== null)
+	if (native_round && !valid_source_identity(facts.source_identity)) return { ...plan, valid: false, error: 'native threeways requires a frozen git or no-git source_identity' }
 	let filenames
 	try {
-		filenames = Object.fromEntries(Object.entries(plan.artifacts).map(([kind, relative]) => [kind, artifact_path(facts.repo_root, relative)]))
-		write_immutable(filenames.brief, facts.brief_text)
+		filenames = threeways_filenames(facts.repo_root, plan.artifacts)
+		if (native_round) {
+			if (fs.existsSync(filenames.report) || fs.existsSync(filenames.resolution)) throw new Error('threeways round already has results; resume it with complete_threeways_native')
+			if (fs.existsSync(filenames.brief)) return resume_threeways_native(plan, facts, filenames)
+			if (facts.native_context !== undefined && facts.native_context !== null) throw new Error('native threeways context has no frozen brief for this round')
+		} else write_immutable(filenames.brief, facts.brief_text)
 	} catch (error) {
 		return { ...plan, valid: false, error: error.message }
 	}
 
+	if (native_choice) {
+		// The brief is frozen only with a handoff, so a failed first selection starts nothing and closes nothing.
+		let launched
+		try { launched = await launch_threeways_debate(facts, dependencies) } catch (error) { return { ...plan, valid: false, error: `threeways native selection failed: ${error.message}`, worker_started: false, retry_required: false } }
+		if (launched.selection?.kind === 'internal' && launched.native_handoff) {
+			try { write_immutable(filenames.brief, facts.brief_text) } catch (error) { return { ...plan, valid: false, error: error.message } }
+			return native_pending(plan, facts, stored_text(facts.brief_text), launched)
+		}
+		return { ...launched, consensus: launched.valid === false ? launched.consensus : 'UNRESOLVED', worker_started: false, retry_required: false, fallback_permitted: false }
+	}
 	let launched
 	try {
 		launched = await launch_threeways_debate(facts, dependencies)
@@ -183,17 +286,97 @@ const execute_threeways_debate = async (facts, dependencies = {}) => {
 	const report_text = typeof launched.runner?.result?.value === 'string' ? launched.runner.result.value : ''
 	const report_ok = launched.runner?.status === 'completed' && valid_worker_report(report_text)
 	try {
-		// A diagnostic is deliberately not shaped as a worker report: the host must
-		// never fabricate a worker stamp or self-check after a failed invocation.
-		write_immutable(filenames.report, report_ok ? report_text : '# Threeways worker diagnostic\n\nRecord type: HOST-DIAGNOSTIC (not a worker report)\n\nWorker report was missing, malformed, or its runner did not complete; no worker conclusion was accepted.\n')
-		const agreed = report_ok && /^Consensus:\s+AGREE\s*$/mu.test(report_text) && facts.host_disagreement !== true
-		const consensus = agreed ? 'AGREE' : 'UNRESOLVED'
-		const family_record = launched.worker?.family_diversity || 'unavailable'
-		const limitation = launched.worker?.limitation || 'none recorded'
-		write_immutable(filenames.resolution, `${facts.host_resolution}\n\nWorker family diversity: ${family_record}\n\nWorker family limitation: ${limitation}\n\nConsensus: ${consensus}\n\nAttempts: ${plan.round}\n\nSelf-check: The host recorded the debate resolution without authorizing implementation.\n`)
+		const { consensus } = finalize_threeways_round({
+			round: plan.round, filenames, report_text, report_ok, host_resolution: facts.host_resolution, host_disagreement: facts.host_disagreement,
+			family_record: launched.worker?.family_diversity || 'unavailable', limitation: launched.worker?.limitation || 'none recorded',
+		})
 		return { ...launched, artifacts: plan.artifacts, consensus, retry_required: consensus === 'UNRESOLVED' && plan.round < 3 }
 	} catch (error) {
 		return { ...launched, valid: false, error: error.message }
+	}
+}
+
+const native_context_error = (context, require_bound) => {
+	if (!is_object(context) || context.context_version !== 1 || context.stage_id !== 'threeways') return 'native threeways context must be a version-1 threeways frozen context'
+	if (!Number.isInteger(context.round) || context.round < 1 || context.round > 3) return 'native threeways context round must be 1 through 3'
+	const plan = plan_threeways_debate({ ask_text: 'threeways', work_root: context.work_root, worker_starts: context.round - 1 })
+	if (!plan.valid || !is_object(context.artifacts) || ['brief', 'report', 'resolution'].some(kind => context.artifacts[kind] !== plan.artifacts[kind]) || context.brief_path !== plan.artifacts.brief) return 'native threeways context artifacts do not match its work root and round'
+	if (typeof context.brief_sha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(context.brief_sha256)) return 'native threeways context must record the brief sha256'
+	if (!valid_source_identity(context.source_identity)) return 'native threeways context must record a git or no-git source_identity'
+	for (const field of ['candidate_id', 'model', 'effort', 'client_request_id']) if (!text_value(context[field])) return `native threeways context ${field} must be non-empty text`
+	if (context.provider_instance_id !== undefined && !text_value(context.provider_instance_id)) return 'native threeways context provider_instance_id must be non-empty when present'
+	if (!is_object(context.requested) || !Array.isArray(context.limitations)) return 'native threeways context must record requested controls and limitations'
+	const exact_model = context.requested.exact_model || context.requested.owner_exact_model
+	const exact_effort = context.requested.exact_effort || context.requested.owner_exact_effort
+	if ((exact_model && exact_model !== context.model) || (exact_effort && exact_effort !== context.effort)) return 'native threeways context substitutes an exact owner model or effort'
+	if (require_bound && !(text_value(context.task_id) && text_value(context.child_thread_id))) return 'native threeways context must be bound to the delegated taskId and childThreadId'
+	return null
+}
+
+// Records the real delegate_task result in the host-persisted context; one context owns one task.
+const bind_threeways_native_task = (context, delegated) => {
+	const error = native_context_error(context, false)
+	if (error) return { valid: false, error }
+	if (!is_object(delegated) || !text_value(delegated.taskId) || !text_value(delegated.childThreadId)) return { valid: false, error: 'delegate_task result must supply taskId and childThreadId' }
+	for (const [field, expected] of [['clientRequestId', context.client_request_id], ['providerInstanceId', context.provider_instance_id], ['model', context.model], ['effort', context.effort]]) {
+		for (const value of [delegated[field], delegated.target?.[field]]) if (value !== undefined && value !== null && value !== expected) return { valid: false, error: `delegate_task ${field} does not match the frozen context` }
+	}
+	if ((context.task_id !== null && context.task_id !== undefined) || (context.child_thread_id !== null && context.child_thread_id !== undefined)) {
+		if (context.task_id !== delegated.taskId || context.child_thread_id !== delegated.childThreadId) return { valid: false, error: 'native threeways context is already bound to another task' }
+	}
+	return { valid: true, context: { ...clone(context), task_id: delegated.taskId, child_thread_id: delegated.childThreadId } }
+}
+
+const native_pending_states = new Set(['queued', 'running', 'waiting'])
+const native_terminal_states = Object.freeze({ completed: 'completed', failed: 'task-failed', cancelled: 'cancelled', interrupted: 'cancelled' })
+
+// Resumes a native round from host-observed task_status evidence; it never launches or rewrites the brief.
+const complete_threeways_native = input => {
+	if (!is_object(input)) return { valid: false, error: 'native threeways completion input must be an object' }
+	const { context } = input
+	const context_error = native_context_error(context, true)
+	if (context_error) return { valid: false, error: context_error }
+	if (!valid_source_identity(input.source_identity) || input.source_identity.source_kind !== context.source_identity.source_kind || input.source_identity.value !== context.source_identity.value) return { valid: false, error: 'native threeways source_identity does not match the frozen context' }
+	if (input.round !== context.round) return { valid: false, error: 'native threeways round does not match the frozen context' }
+	if (typeof input.repo_root !== 'string' || !has_required_sections(input.host_resolution, required_resolution_sections)) return { valid: false, error: 'native threeways completion requires repository root and resolution sections' }
+	let filenames
+	try { filenames = threeways_filenames(input.repo_root, context.artifacts) } catch (error) { return { valid: false, error: error.message } }
+	if (!fs.existsSync(filenames.brief) || sha256_text(fs.readFileSync(filenames.brief, 'utf8')) !== context.brief_sha256) return { valid: false, error: 'native threeways frozen brief is missing or changed' }
+	const base = { valid: true, stage_id: 'threeways', round: context.round, artifacts: { ...context.artifacts } }
+	const waiting = (state, reason) => ({ ...base, state, consensus: 'PENDING', retry_required: false, fallback_permitted: false, reason })
+	const status = input.task_status
+	if (!is_object(status)) return waiting('uncertain', 'task_status evidence is missing or malformed')
+	if (status.taskId !== context.task_id) return { valid: false, error: 'task_status taskId does not match the frozen context' }
+	for (const [field, expected] of [['childThreadId', context.child_thread_id], ['clientRequestId', context.client_request_id], ['providerInstanceId', context.provider_instance_id], ['model', context.model], ['effort', context.effort]]) {
+		if (status[field] !== undefined && status[field] !== null && status[field] !== expected) return { valid: false, error: `task_status ${field} does not match the frozen context` }
+	}
+	if (status.waitTimedOut === true || status.timedOut === true) return waiting('uncertain', 'task status timed out; keep the taskId and read task_status again')
+	if (native_pending_states.has(status.status)) return waiting('pending', `task is ${status.status}`)
+	if (!Object.hasOwn(native_terminal_states, status.status)) return waiting('uncertain', 'task_status state is missing or unknown')
+	if (typeof status.hasPendingChildRuns !== 'boolean') return waiting('uncertain', 'task_status hasPendingChildRuns is missing')
+	if (status.hasPendingChildRuns || status.workState === 'working' || status.workState === 'waiting_for_children') return waiting('pending', 'task still has pending child runs')
+	const state = native_terminal_states[status.status]
+	const report_text = state === 'completed' && typeof status.summary === 'string' ? status.summary : ''
+	const report_ok = state === 'completed' && valid_worker_report(report_text)
+	let closed
+	try {
+		closed = finalize_threeways_round({
+			round: context.round, filenames, report_text, report_ok, host_resolution: input.host_resolution, host_disagreement: input.host_disagreement,
+			family_record: 'unavailable', limitation: context.limitations.filter(text_value).join('; ') || 'none recorded',
+		})
+	} catch (error) {
+		return { valid: false, error: error.message }
+	}
+	// An owner stop stays unresolved until renewed authorization; it is never an automatic retry.
+	const stopped = state === 'cancelled'
+	return {
+		...base, state, consensus: closed.consensus, replayed: closed.replayed,
+		retry_required: closed.consensus === 'UNRESOLVED' && !stopped && context.round < 3,
+		requires_authorization: stopped, fallback_permitted: false,
+		attempt: {
+			candidate_id: context.candidate_id, kind: 'internal', state, actual: { model: context.model, effort: context.effort },
+			transport: { tool: 'task_status', handle: context.task_id, thread_id: context.child_thread_id, client_request_id: context.client_request_id, worker_started: true, stop_verified: true },
+		},
 	}
 }
 
@@ -568,6 +751,8 @@ module.exports = {
 	plan_threeways_debate,
 	launch_threeways_debate,
 	execute_threeways_debate,
+	bind_threeways_native_task,
+	complete_threeways_native,
 	select_executor_action,
 	next_executor_action,
 	validate_execution_record,

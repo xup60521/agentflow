@@ -1,0 +1,28 @@
+{
+  "context_version": 1,
+  "stage_id": "threeways",
+  "work_root": ".agentflow/artifacts/A-010-t3-orchestrator/native-review",
+  "round": 2,
+  "artifacts": {
+    "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r2.md",
+    "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r2.md",
+    "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r2.md"
+  },
+  "brief_path": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r2.md",
+  "brief_sha256": "4e7c39e69966e582ceaeafdf3e24a66bef40d167d692eca7de96d521a637f189",
+  "source_identity": {
+    "source_kind": "git",
+    "value": "caef93bdea94a443a81eecbea951be83480781ea"
+  },
+  "candidate_id": "t3:codex:gpt-6.1-sol",
+  "provider_instance_id": "codex",
+  "model": "gpt-6.1-sol",
+  "effort": "high",
+  "requested": {
+    "tier": "better"
+  },
+  "limitations": [],
+  "client_request_id": "threeways-r2-3dcead2c6a9433cba6fda424",
+  "task_id": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424",
+  "child_thread_id": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r2-3dcead2c6a9433cba6fda424"
+}

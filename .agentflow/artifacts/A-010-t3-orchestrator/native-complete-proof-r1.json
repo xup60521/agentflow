@@ -1,0 +1,70 @@
+{
+  "closed": {
+    "valid": true,
+    "stage_id": "threeways",
+    "round": 1,
+    "artifacts": {
+      "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r1.md",
+      "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r1.md",
+      "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r1.md"
+    },
+    "state": "completed",
+    "consensus": "UNRESOLVED",
+    "replayed": false,
+    "retry_required": true,
+    "requires_authorization": false,
+    "fallback_permitted": false,
+    "attempt": {
+      "candidate_id": "t3:codex:gpt-6.1-sol",
+      "kind": "internal",
+      "state": "completed",
+      "actual": {
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "transport": {
+        "tool": "task_status",
+        "handle": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+        "thread_id": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+        "client_request_id": "threeways-r1-bba92c23bc0b847c587f9397",
+        "worker_started": true,
+        "stop_verified": true
+      }
+    }
+  },
+  "replay": {
+    "valid": true,
+    "stage_id": "threeways",
+    "round": 1,
+    "artifacts": {
+      "brief": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-brief-r1.md",
+      "report": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-report-r1.md",
+      "resolution": ".agentflow/artifacts/A-010-t3-orchestrator/native-review/threeways-resolution-r1.md"
+    },
+    "state": "completed",
+    "consensus": "UNRESOLVED",
+    "replayed": true,
+    "retry_required": true,
+    "requires_authorization": false,
+    "fallback_permitted": false,
+    "attempt": {
+      "candidate_id": "t3:codex:gpt-6.1-sol",
+      "kind": "internal",
+      "state": "completed",
+      "actual": {
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "transport": {
+        "tool": "task_status",
+        "handle": "node:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+        "thread_id": "thread:delegated-task:command%3Amcp%3A3aa81310-9185-456c-9315-625a58d5c7ee%3Adelegate-task%3Athreeways-r1-bba92c23bc0b847c587f9397",
+        "client_request_id": "threeways-r1-bba92c23bc0b847c587f9397",
+        "worker_started": true,
+        "stop_verified": true
+      }
+    }
+  },
+  "no_rewrite": true,
+  "host_acceptance": "BLOCKING R1/R2; fixes required"
+}

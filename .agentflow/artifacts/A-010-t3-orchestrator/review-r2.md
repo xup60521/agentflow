@@ -1,0 +1,45 @@
+* _2026-10-18 16:08:18 +0800 (gpt-6.1-sol/high)_
+
+Reviewed implementation commit: caef93bdea94a443a81eecbea951be83480781ea
+
+Verdict: PASS
+
+Outcome: PASS
+
+Minimality: PASS
+
+Conformance: PASS
+
+- 原生派工與同輪恢復符合核准設計，前輪 R1／R2 均可關閉，沒有未處理的產品阻擋項。缺少原始派工記錄時會停止恢復，候選或政策改變也不會替仍在執行的任務結案。
+
+- 本輪審查通過不代替 host 驗收。Host 須在本報告回傳後讀取真實 task_status，完成本輪報告接合與無寫入 replay；這段目前尚未完成，不能先算通過。
+
+- 沿用整合後路由 41 PASS、advanced rulebook 契約 1 PASS、未變動的 language 契約 2 PASS，以及四個新增反例先 37 PASS／4 FAIL、再 41 PASS 的證據。已讀取指定 host logs，沒有重跑完整 suite；既有 budget／release alignment 失敗不列為本輪回歸。
+
+- **R1 已修正。** [恢復入口](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.js:230) 只使用 host 保存的 facts.native_context，不再從目前候選重建派工身分。來源、round、work root、brief 雜湊或顯式 request ID 不符即拒絕；缺 context 則維持 uncertain，不回傳交接資料或新 context。未綁定 task 時只恢復原 handoff 與 request ID，讓工具以同一 ID 去重；已綁定後只回原 taskId／childThreadId，不提供第二次派工資料。這關閉原來的來源、request ID 與 effort 漂移反例，符合 INV-2、INV-3。
+
+- 派工控制也保留原值。[request ID](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.js:217) 的自動雜湊已納入 candidate、provider、model、effort；[binding](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.js:317) 會檢查工具結果及 target 暴露的控制項，completion 也拒絕不同的 effort。真實工具未回 effort 時，仍依 host 保存的原呼叫目標記錄，沒有把 worker 自述當作工具證據。Host 必須在派工前保存 context，並在取得 handle 後保存綁定版本；這是既有 host round 記錄的責任。
+
+- **R2 已修正。** [execute 的分支順序](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.js:249) 在選擇器之前處理既有原生輪次。帶原 context 重入，即使 available=false、effort 改為 medium、choice 改為 external 或 policy 禁止 internal，仍保留原任務，不寫 report／resolution，也不要求 retry 或 fallback。缺 context 且仍選 internal 時維持 uncertain；同時改選 external 時，既有 immutable brief 使入口直接拒絕，仍不會派工或收尾。初次選擇失敗則不寫任何輪次檔案，不虛構 worker 已啟動，符合 INV-2、INV-5。
+
+- 有一項測試證據須限縮解讀。[effort completion 反例](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.test.js:814) 使用另一個空 repo root，會先被缺少 brief 擋下，單憑該斷言不能證明 effort 檢查有效。我先記錄風險，再以指定 commit 原碼載入 Node VM，只把 node:fs 換成記憶體 Map。正確 brief 存在時，medium 狀態交給 high context 明確回傳 task_status effort 不符；delegate target 的 effort 不符也被拒絕。另確認原 handoff 恢復、來源／request 拒絕、改選 external 的安全分支、pending children、合法完成及只讀 replay，沒有呼叫 resolver 或外部 runner。這補足本輪行為證據；建議後續把既有斷言改用同一 root 並核對錯誤原因，並非豁免已知產品錯誤。上述檢查全在記憶體，沒有冒充真實工具結果。
+
+- INV-1／驗收 2 仍經既有 allowed-worker 與 selector；明確 internal 選擇不要求 external profile、executable 或 argv，也不呼叫 external resolver。每個 provider/model 各列自己的 effort，精確模型／effort 不可替代，沿用原 selector 的控制檢查。一般原生委派仍由互動 host 呼叫真實工具，沒有新增排程器或讓 standalone CLI 假裝持有 MCP。
+
+- INV-2、INV-5／驗收 4 的生命週期分支保留正確限制。[完成接點](/home/zup/code/agentflow/skills/agentflow/scripts/delegation-route.js:334) 將 queued／running／waiting、timeout、未知狀態、缺少 child 狀態及 pending children 保留 pending 或 uncertain，不回傳終態 attempt，不允許 retry／fallback。cancelled／interrupted 必須確認無 pending children，才記錄 stop_verified，且 replacement 仍需重新授權。failed 需沿用既有 host 檢查與調和規則，不能把停止證據當成驗收。
+
+- INV-3、INV-5／驗收 3、5 的來源、round、brief 與 handle 檢查保留；不符即拒絕。缺少或格式錯誤的報告、終態失敗只寫真實 HOST-DIAGNOSTIC，不捏造 worker 戳記或接受紀錄。原生與外部共用收尾，拒絕覆寫衝突，相同結果只讀 replay，report 已寫但 resolution 未寫時只補後者，只有 resolution 時拒絕。第三輪合法結果可以完成，第四次啟動仍被禁止。共識判斷仍需 host 檢查與決定，worker 的同意文字不能取代驗收。
+
+- 真實旅程已讀取本輪 handoff、預先保存的 context、delegate 回傳、綁定 context、pending-proof 與 PTY 證據。使用同一 work root 的 round 2，request ID 為 threeways-r2-3dcead2c6a9433cba6fda424，真實 codex/gpt-6.1-sol high 任務已有 taskId／childThreadId；running、同輪改選與缺 context 均未產生 report／resolution。前輪 raw task_status 完成得到 UNRESOLVED、replay 未重寫的證據可沿用；本輪真實完成留給 host。驗收 1 的一般原生實作旅程與驗收 7 的無 remotes clone、授權路徑整合及八個既有髒檔雜湊不變，沿用交辦和 host 紀錄。
+
+- INV-4 的權限界線如實保留。寫入只授權 host 準備的 disposable clone 指定檔案，整合仍由 host 檢查；文件沒有將 clone 說成 OS sandbox。本 GPT 審查獨立於 Opus 實作，與 host 同模型家族，共享 filesystem／permissions，唯讀由指令約束。
+
+- INV-6／驗收 6 沒有發現外部路徑回歸。原有 27 項基線包含在 41 PASS 中；完整 diff 保留 external command、clone、結果格式、CLI 參數與一般 selector／execution validator，只共用報告收尾。新增程式使用 Node 標準模組，沒有依賴或平台專用命令；host PTY 已證明 CLI 回 PENDING 且只寫 brief。保留 Windows／跨機器 fork 的方向，沒有宣稱 Windows 實機已測通過。
+
+- 最小性檢查實際比較刪除 saved-context 恢復、只靠擴充 request 雜湊的方案。它無法在候選變動時讀回原 handle，亦無法處理 context 遺失，會重現 R1／R2。再比較刪除原生完成接點、重用 execute 或既有 validate_execution_record：前者會重走啟動流程，後者驗證終態接受紀錄，均不能直接處理 pending 與 round／brief 恢復。保留 handoff、binding、context 驗證及共用 finalize／write_or_match 各有派工、身分或不可覆寫的用途；native_handoff_from 已共用初次與恢復的資料組裝。未找到刪減後仍滿足核准 Ask 的較小方案。
+
+- 已完整比對 base 791420dc29f02a14792ad654ca8940fd5ebfc042 與受審 commit 的五個產品檔，核對目前這五檔與指定 commit 無差異，讀取核准設計、兩輪實作回應與有效的 full cross-check plan。repository 流程僅作受審資料，依交辦套用 writing.md 與必要寫作指引。沒有啟動 Agentflow、委派、啟動模型、修改 source/config、commit 或 push；唯一由本審查寫入的檔案是 review-r2.md。未擴大到 baseline、設定或 looper 修復。
+
+Consensus: AGREE
+
+Self-check: 已逐項核對六個 invariant 與七個驗收條件，關閉 R1／R2，對新增 effort 測試的提前失敗補做指定原碼記憶體檢查，並比較刪除／重用方案；未豁免產品問題，未把本輪待 host 收尾的真實完成、replay 或共享 filesystem 誤稱為已通過驗收或 OS 隔離。

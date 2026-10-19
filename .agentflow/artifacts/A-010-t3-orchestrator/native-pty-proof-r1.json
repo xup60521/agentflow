@@ -1,0 +1,15 @@
+{
+  "terminal": "/dev/pts/4",
+  "input": [
+    "node",
+    "skills/agentflow/scripts/delegation-route.js",
+    "threeways",
+    ".agentflow/artifacts/A-010-t3-orchestrator/native-review-facts-r1.json"
+  ],
+  "exit_status": 0,
+  "consensus": "PENDING",
+  "provider": "codex",
+  "model": "gpt-6.1-sol",
+  "client_request_id": "threeways-r1-bba92c23bc0b847c587f9397",
+  "brief_only": true
+}
