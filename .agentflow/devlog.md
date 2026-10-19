@@ -4,17 +4,17 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: 本輪問答紀錄保存於 Git 歷史.
+Current commit: 本輪稽核問答紀錄保存於 Git 歷史.
 
-Tests/scenarios: 已核對本機技能、繁中指南及 CLI 用法；未修改產品程式.
+Tests/scenarios: 執行 skills audit 並核對原始碼、技能條款及可見 hooks；未跑產品測試.
 
 Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: 已說明 Agentflow 可用指令與工具範圍.
+Proven: 已找到 skills audit，完成初步衝突檢查並提出五項候選修正；未修改產品.
 
-Open: agf shell 捷徑尚未設定；hooks 提示需要重啟主機.
+Open: 五項候選修正等待 owner 選擇；技能實際啟用狀態部分未知.
 
-Next: 等待 owner 下一項需求.
+Next: 等待 owner 指定要處理的候選編號.
 
 Artifacts: none.
 
@@ -192,5 +192,55 @@ Streams: none.
 ---
 
 # → Ask / A-014 (zup-swift-book)
+
++ ag
+  agentflow 裡面應該有一個audit，幫我找出來，再來看有哪寫要來修正的。先不要真的寫code，我來決定哪些要處理
+
+---
+
+## [RUN-001] Event — 2026-10-19 17:14:14 +0800 (A-014)
+
+- 已找到並執行 agf skills audit --json；清單共 58 個技能路徑，含 8 個 .trash 項目與 32 個 plugin cache 項目。assessment=not_performed，語意判讀由 host 進行。
+- 路線 direct、host 唯讀檢查；allow-ag=on，但 owner 明確要求先交付問題供選擇，不啟動實作 pipeline。streams=off，保留既有來源與設定變更。
+- 核對 audit 原始碼、相關技能條款與可見 hooks；保存五項修正提案，未修改產品、技能或設定，未啟動其他技能腳本或模型。已檢查 notebook 差異；本輪只提交問答紀錄，未跑產品測試。
+
+# ← Reply / A-014
+
+* _2026-10-19 17:14:14 +0800 (gpt-6.1-sol/medium)_
+
+## [SUMMARY]
+
+- 找到 `agf skills audit`，完成初步檢查，整理五項候選修正；建議優先處理 T3 派工規則與交付連結。尚未改程式碼、技能或設定。
+
+## [FINAL REPORT]
+
+1. 「agentflow 裡面應該有一個audit，幫我找出來，再來看有哪寫要來修正的。先不要真的寫code，我來決定哪些要處理」
+
+   - 已找到並執行 `node .agents/skills/agentflow/scripts/agf.js skills audit --json`。它只產生技能清單與檢查指引，輸出明確標示 `assessment: not_performed`，不會自動判斷衝突或修正。入口見 [skills-audit.js](../.agents/skills/agentflow/scripts/skills-audit.js:64)。
+
+   - **候選 1，優先：T3 寫入派工規則不一致。** [delegation.md](../.agents/skills/agentflow/references/delegation.md:21) 要求 T3 writer 使用 host 準備的無 remote clone；目前 T3 主機規則要求獨立 checkout 透過 `delegate_task` 的 `isolation:"worktree"` 建立。後續實作派工會遇到兩套不同要求。建議明訂 T3 使用工具管理的 worktree，非 T3 保留 external clone，並保留來源、變更範圍及驗收檢查。這需要你決定隔離政策，不能視為單純文字修正。
+
+   - **候選 2，優先：結案規則可能吞掉交付連結。** [Agentflow](../.agents/skills/agentflow/SKILL.md:173) 在 `inline-reply: off` 時只允許筆記更新通知；[Google Docs](</home/zup/.codex/plugins/cache/openai-curated-remote/google-drive/0.1.22/skills/google-docs/SKILL.md:76>) 要求在最後聊天附文件 citation，[Sites](</home/zup/.codex/plugins/cache/openai-curated-remote/sites/1.0.2-remix-b.1/skills/sites/SKILL.md:133>) 要求回傳網站 URL。兩者同時使用時無法全部照做。建議允許必要的交付連結出現在聊天；目前本專案 `inline-reply: on`，未觸發只回通知的情境。
+
+   - **候選 3：unslop 缺少不可改寫內容的例外。** [unslop](</home/zup/.agents/skills/unslop/SKILL.md:13>) 要求 Rewrite，並在第 50、56 行要求移除特定標點；Agentflow 要求保存 owner 原文與不可變的歷史紀錄。若全面套用，可能改到引述、時間戳或既有紀錄。建議限制在新撰寫的敘述，明確排除原文引述、歷史紀錄、程式碼與機器格式。本輪已按這個範圍保留原文。
+
+   - **候選 4：audit 混入垃圾桶與未確認啟用的快取。** 本次清單有 58 個技能路徑，其中 8 個位於 Claude `.trash`，32 個位於 plugin cache。[掃描器](../.agents/skills/agentflow/scripts/skills-audit.js:30) 只排除 `.git`、`node_modules`，沒有標示每個技能是否啟用。它已有「installed 不等於 active」的警語，所以這是清單品質問題，不能宣稱這些技能都會執行。建議預設排除 `.trash`，並區分目前主機提供、僅發現檔案及狀態未知。
+
+   - **候選 5：Sites 與 Agentflow 都會處理 Git 提交。** [Sites](</home/zup/.codex/plugins/cache/openai-curated-remote/sites/1.0.2-remix-b.1/skills/sites/SKILL.md:116>) 說 source helper 負責 Git preparation、commit/push；Agentflow 也有自己的提交與推送規則。這是可能重疊，尚未證明實際誤提交。建議明訂 Site checkout 的來源同步由 Sites 負責，Agentflow 只處理自己的紀錄與驗收，避免兩套流程重複操作同一 checkout。
+
+   - 可保留的互補能力：frontend-design 提供視覺設計指引，Docs 提供原生文件編輯與讀回檢查，沒有必要因此移除技能。no-ai-slop 與 unslop 大多重疊，前者只在編輯需求觸發，暫不列為優先修正。
+
+   - 範圍限制：這是針對工作流程、寫入權限及交付的初步檢查，未逐一審查全部 58 個技能與其參照檔。Claude 專案設定可見 Agentflow 的 Stop、UserPromptSubmit hooks；未執行 hooks，也未證明其他主機的實際載入狀態。祖先專案、自訂根目錄、遠端技能與不可見 hooks 不在完整覆蓋內。未跑產品測試；本輪只保存問答紀錄。
+
+   - 你可以直接指定候選編號；在你選定前不進行修正。
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+
+---
+
+# → Ask / A-015 (zup-swift-book)
 
 +
