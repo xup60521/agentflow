@@ -577,6 +577,53 @@ const host_candidates = (facts, skipped) => {
 	})
 }
 
+// Turns one observed T3 orchestrator_capabilities catalog plus the host's exact selection into an
+// internal candidate and a delegate_task target. Pure data: it never calls tools or picks a model.
+const prepare_t3_internal_candidate = input => {
+	const refuse = error => ({ valid: false, error })
+	if (!is_object(input)) return refuse('T3 preparation input must be an object')
+	const tools = input.tools
+	if (!is_object(tools)) return refuse('observed T3 invoke, result, and stop tool availability is required')
+	for (const control of ['invoke', 'result', 'stop']) if (tools[control] !== true) return refuse(`T3 ${control} tool is unavailable in this host session`)
+	const catalog = input.catalog
+	if (!is_object(catalog) || !Array.isArray(catalog.providers)) return refuse('observed orchestrator_capabilities catalog with a providers list is required')
+	const selection = is_object(input.selection) ? input.selection : {}
+	const provider_id = selection.provider_instance_id ?? selection.providerInstanceId
+	const model_id = selection.model
+	if (!text_value(provider_id)) return refuse('selected T3 provider instance is required')
+	if (!text_value(model_id)) return refuse('selected T3 model is required')
+	const provider = catalog.providers.find(item => is_object(item) && item.providerInstanceId === provider_id)
+	if (!provider) return refuse(`T3 provider instance ${provider_id} is not listed by orchestrator_capabilities`)
+	if (provider.canRunChildTask !== true || provider.enabled === false) return refuse(`T3 provider instance ${provider_id} cannot run child tasks`)
+	const model = Array.isArray(provider.models) ? provider.models.find(item => is_object(item) && item.id === model_id) : undefined
+	if (!model) return refuse(`T3 model ${model_id} is not listed for provider instance ${provider_id}`)
+	const descriptors = Array.isArray(model.options) ? model.options.filter(is_object) : []
+	const chosen = selection.options === undefined ? {} : selection.options
+	if (!is_object(chosen)) return refuse('selected T3 options must map option IDs to values')
+	for (const [id, value] of Object.entries(chosen)) {
+		const descriptor = descriptors.find(item => item.id === id)
+		if (!descriptor) return refuse(`T3 option ${id} is not listed for model ${model_id}`)
+		if (descriptor.type === 'boolean') { if (typeof value !== 'boolean') return refuse(`T3 option ${id} requires a boolean value`); continue }
+		if (descriptor.type !== 'select') return refuse(`T3 option ${id} has unsupported type ${descriptor.type}`)
+		const values = Array.isArray(descriptor.options) ? descriptor.options.filter(is_object).map(item => item.id) : []
+		if (typeof value !== 'string' || !values.includes(value)) return refuse(`T3 option ${id} value ${value} is not listed for model ${model_id}`)
+	}
+	// The host names which of this model's select options carries effort; no option ID is assumed.
+	const effort_option = selection.effort_option
+	if (effort_option !== undefined) {
+		const descriptor = descriptors.find(item => item.id === effort_option)
+		if (!descriptor || descriptor.type !== 'select') return refuse(`T3 effort option ${effort_option} is not a select option of model ${model_id}`)
+		if (!Object.hasOwn(chosen, effort_option)) return refuse(`T3 effort option ${effort_option} has no selected value`)
+	}
+	const effort = effort_option === undefined ? 'inherited' : chosen[effort_option]
+	const target = { providerInstanceId: provider_id, model: model_id, ...(Object.keys(chosen).length ? { options: { ...chosen } } : {}) }
+	const candidate = {
+		candidate_id: `t3:${provider_id}:${model_id}`, available: true, provider_instance_id: provider_id, model: model_id, effort,
+		controls: { models: [model_id], ...(effort === 'inherited' ? {} : { efforts: [effort] }) }, target: clone(target),
+	}
+	return { valid: true, candidate, target }
+}
+
 const selected_result = (kind, candidate, task, reason, limitations = []) => {
 	const id = candidate.candidate_id || candidate.id || `${kind}:${task.task_id || 'task'}`
 	const controls = requested_controls(task)
@@ -598,7 +645,7 @@ const selected_result = (kind, candidate, task, reason, limitations = []) => {
 		requested, actual: { model: usable.model, effort: usable.effort }, usable_model: usable.model, usable_effort: usable.effort, limitations: result_limitations,
 	}
 	if (kind === 'external') result.action = { type: 'external-runner', candidate_id: id, profile_id: candidate.profile?.id || candidate.id || id, command: [...candidate.command] }
-	if (kind === 'internal') result.action = { type: 'native-tool', candidate_id: id, brief: clone(task.brief || task.frozen_brief || {}), controls: native_controls }
+	if (kind === 'internal') result.action = { type: 'native-tool', candidate_id: id, brief: clone(task.brief || task.frozen_brief || {}), controls: native_controls, ...(is_object(candidate.target) ? { target: clone(candidate.target) } : {}) }
 	if (kind === 'host') result.action = { type: 'host-direct', candidate_id: id, work_boundary: clone(task.work_boundary || []), reason }
 	return result
 }
@@ -753,6 +800,7 @@ module.exports = {
 	execute_threeways_debate,
 	bind_threeways_native_task,
 	complete_threeways_native,
+	prepare_t3_internal_candidate,
 	select_executor_action,
 	next_executor_action,
 	validate_execution_record,
