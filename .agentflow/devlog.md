@@ -4,19 +4,19 @@ Project: agentflow
 
 Notebook: .agentflow/devlog.md — root.
 
-Current commit: 產品已合併 73bf48c；結案紀錄保存於 Git 歷史.
+Current commit: 本輪問答紀錄保存於 Git 歷史.
 
-Tests/scenarios: 沿用 route44、文件契約2 PASS 與 GPT review PASS；84 個既存檔案雜湊不變.
+Tests/scenarios: 已核對本機技能、繁中指南及 CLI 用法；未修改產品程式.
 
 Configuration: ag.json — schema v8; validated for codex this round.
 
-Proven: T3 派工增補已合併，A-011 與本輪結案紀錄已保存.
+Proven: 已說明 Agentflow 可用指令與工具範圍.
 
-Open: Windows 未實機測試；既存安裝與設定變更保持原樣.
+Open: agf shell 捷徑尚未設定；hooks 提示需要重啟主機.
 
 Next: 等待 owner 下一項需求.
 
-Artifacts: .agentflow/artifacts/A-011-t3-adoption/.
+Artifacts: none.
 
 Archived eras: .agentflow/devlog.archive.md.
 
@@ -138,5 +138,59 @@ Streams: none.
 ---
 
 # → Ask / A-013 (zup-swift-book)
+
++ agentflow 有哪些工具可以用
+
+---
+
+## [RUN-001] Event — 2026-10-19 17:09:23 +0800 (A-013)
+
+- 核對 Agentflow 8.4.15 技能、繁中指南與 CLI 用法，整理對話指令、終端機工具及派工能力；本輪只保存問答紀錄，既存產品與設定變更不納入提交。
+
+# ← Reply / A-013
+
+* _2026-10-19 17:09:23 +0800 (gpt-6.1-sol/medium)_
+
+## [SUMMARY]
+
+- 目前 Agentflow v8.4.15 可用對話指令、終端機 CLI、派工與計畫執行工具；平常直接交代任務即可。
+
+## [FINAL REPORT]
+
+1. "agentflow 有哪些工具可以用"
+
+   常用的對話指令：
+
+   - `godev`：啟動工作流程，或接續筆記裡未完成的工作。
+
+   - `fast-lane <任務>`：由目前助理直接處理，保留紀錄與必要檢查，略過委派及獨立審查。
+
+   - `skip-ag <任務>`：跳過大型開發流程，仍保留正常紀錄、檢查與審查。`no-ag <任務>` 則讓這則訊息完全略過 Agentflow。
+
+   - `ag <任務>`：依設定進行需求、規格、實作與驗收。`all-in` 也納入選用顧問。
+
+   - `3ways` 或 `threeways`：安排一次獨立評論，再由主助理回應。`review-only` 可指定只審查；`cross-check` 用來要求成果複查。
+
+   - `make-plans`：建立計畫佇列，停在實作前。`run-plans` 執行既有佇列，`run-looper` 啟動循序執行工具。
+
+   - `new-feature: <名稱>`：建立獨立功能工作區。`merge-back` 交付回主分支，`cleanup:<taskkey>` 清理工作區。
+
+   - `show-diff`：顯示修改理由與差異。`settings` 查看設定；例如 `lang: zh-tw` 可修改語言。
+
+   終端機提供 `agf`，包含 `init`、`setup`、`hooks`、`settings`、`start`、`review`、`close`、`compact`、`owner`、`new`、`finish`、`cleanup`、`ditch`、`skills audit`、`uninstall`。計畫執行器另用 `agf-looper`。
+
+   派工可使用 T3 Code 原生工具、外部 runner，或由目前助理執行，實際取決於專案權限與可用能力。Agentflow 本身沒有額外提供瀏覽器、搜尋或寄信工具，這些由所在主機提供。
+
+   已核對本機技能、繁中指南與 CLI 用法。目前 shell 的 `agf` 捷徑尚未設定，可用 `node .agents/skills/agentflow/scripts/agf.js <子指令>`。啟動提示 hooks 需要重啟主機後生效。
+
+   完整說明見 [繁中操作指南](../.agents/skills/agentflow/docs/AG_GUIDE.zh-tw.md)與[工具參考](../.agents/skills/agentflow/scripts/README.md)。
+
+## Questions (batched — each with a suggested default)
+
+- None.
+
+---
+
+# → Ask / A-014 (zup-swift-book)
 
 +
