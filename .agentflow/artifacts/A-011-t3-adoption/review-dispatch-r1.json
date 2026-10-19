@@ -1,0 +1,19 @@
+{
+  "taskId": "node:delegated-task:command%3Amcp%3Ab48412f9-9949-49c1-8d81-594a92d70b15%3Adelegate-task%3Aagentflow-A011-gpt-review-r1",
+  "childThreadId": "thread:delegated-task:command%3Amcp%3Ab48412f9-9949-49c1-8d81-594a92d70b15%3Adelegate-task%3Aagentflow-A011-gpt-review-r1",
+  "childRunId": "run:thread:thread%3Adelegated-task%3Acommand%253Amcp%253Ab48412f9-9949-49c1-8d81-594a92d70b15%253Adelegate-task%253Aagentflow-A011-gpt-review-r1:ordinal:1",
+  "childNodeId": "node:delegated-task:command%3Amcp%3Ab48412f9-9949-49c1-8d81-594a92d70b15%3Adelegate-task%3Aagentflow-A011-gpt-review-r1",
+  "status": "running",
+  "workState": "working",
+  "hasPendingChildRuns": false,
+  "latestTerminalRunId": null,
+  "latestTerminalStatus": null,
+  "latestTerminalSummary": null,
+  "latestTerminalResultContextTransferId": null,
+  "providerInstanceId": "codex",
+  "model": "gpt-6.1-sol",
+  "summary": null,
+  "resultContextTransferId": null,
+  "hasPendingQuestion": false,
+  "waitTimedOut": false
+}

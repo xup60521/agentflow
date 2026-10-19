@@ -1,0 +1,10 @@
+{
+  ".agents/skills/agentflow/references/delegation.md": "33f5845be4cc3d04146887724d17a30c72c229500a64523873bcfb68ca80660b",
+  ".agents/skills/agentflow/scripts/ag-settings.js": "dd3e4351f3d4415b1859a419e0ece97cbfa8ef38ed93f13e782dc2ca6f5c5b01",
+  ".agents/skills/agentflow/scripts/ag-settings.test.js": "7fb1f613b28d222162f1424eebb2e27dba8ce697fa912f7acfba43789dd6af7f",
+  ".agents/skills/agentflow/scripts/prompt-compression.test.js": "7f40240fbc533947fae64d14d476c3789fbf823bc62aa578d43030454a9ed25e",
+  ".agents/skills/agentflow/scripts/round-linter.js": "4bea95d871e51d308ce2151c635552cd4152b5a282a10dbe42aa8ee8c9017540",
+  ".agents/skills/agentflow/scripts/round-linter.test.js": "73e3cf39e45c77faf0fc19f8fa60fbd3e1acbf5114cd2f0720e50568ee92a3f6",
+  "ag.json": "fffec34cefac42eb5c5eb5a6b98678d81fac891f88578ac2997fedf2a422b3dd",
+  "skills-lock.json": "29e9b15b51c668d6238c9a8ca544a606f740900ea1cd2655c1209ac4c7089b91"
+}

@@ -851,3 +851,114 @@ test('native first-launch selection failure starts nothing and leaves the round 
 	assert.equal(started.consensus, 'PENDING', started.error)
 	assert.ok(started.native_handoff)
 })
+
+// Shaped like an observed orchestrator_capabilities result; IDs are fixtures, not a supported list.
+const t3_catalog = () => ({
+	inheritedProviderInstanceId: 'claudeAgent',
+	inheritedModel: 'claude-opus-x',
+	providers: [
+		{ providerInstanceId: 'codex', driverKind: 'codex', canRunChildTask: true, constraints: [], models: [
+			{ id: 'gpt-a', options: [{ id: 'reasoningEffort', type: 'select', options: [{ id: 'low', isDefault: true }, { id: 'high' }] }, { id: 'serviceTier', type: 'select', options: [{ id: 'default' }, { id: 'priority' }] }] },
+			{ id: 'gpt-b', options: [{ id: 'reasoningEffort', type: 'select', options: [{ id: 'medium' }, { id: 'ultra' }] }] },
+		] },
+		{ providerInstanceId: 'claudeAgent', driverKind: 'claudeAgent', canRunChildTask: true, constraints: [], models: [
+			{ id: 'claude-opus-x', options: [{ id: 'effort', type: 'select', options: [{ id: 'medium', isDefault: true }, { id: 'xhigh' }] }, { id: 'fastMode', type: 'boolean' }] },
+		] },
+		{ providerInstanceId: 'my-gateway', driverKind: 'opencode', canRunChildTask: true, constraints: [], models: [
+			{ id: 'vendor/family/model-1', options: [{ id: 'variant', type: 'select', options: [{ id: 'low' }, { id: 'max' }] }, { id: 'thinking', type: 'boolean' }] },
+		] },
+		{ providerInstanceId: 'off-provider', driverKind: 'grok', canRunChildTask: false, constraints: ['Provider instance is disabled.'], models: [{ id: 'grok-a', options: [] }] },
+	],
+})
+const t3_tools = () => ({ invoke: true, result: true, stop: true })
+const t3_prepare = (selection, extra = {}) => route.prepare_t3_internal_candidate({ catalog: t3_catalog(), tools: t3_tools(), selection, ...extra })
+
+test('T3 catalog adapter keeps each model-local option ID and value exactly', () => {
+	assert.equal(typeof route.prepare_t3_internal_candidate, 'function')
+	const codex = t3_prepare({ provider_instance_id: 'codex', model: 'gpt-a', options: { reasoningEffort: 'high', serviceTier: 'priority' }, effort_option: 'reasoningEffort' })
+	assert.equal(codex.valid, true, codex.error)
+	assert.deepEqual(codex.target, { providerInstanceId: 'codex', model: 'gpt-a', options: { reasoningEffort: 'high', serviceTier: 'priority' } })
+	assert.equal(codex.candidate.candidate_id, 't3:codex:gpt-a')
+	assert.equal(codex.candidate.available, true)
+	assert.equal(codex.candidate.provider_instance_id, 'codex')
+	assert.deepEqual([codex.candidate.model, codex.candidate.effort], ['gpt-a', 'high'])
+	assert.deepEqual(codex.candidate.controls, { models: ['gpt-a'], efforts: ['high'] })
+	assert.deepEqual(codex.candidate.target, codex.target)
+	const claude = t3_prepare({ providerInstanceId: 'claudeAgent', model: 'claude-opus-x', options: { effort: 'xhigh', fastMode: true }, effort_option: 'effort' })
+	assert.equal(claude.valid, true, claude.error)
+	assert.deepEqual(claude.target, { providerInstanceId: 'claudeAgent', model: 'claude-opus-x', options: { effort: 'xhigh', fastMode: true } })
+	assert.equal(claude.candidate.effort, 'xhigh')
+	const custom = t3_prepare({ provider_instance_id: 'my-gateway', model: 'vendor/family/model-1', options: { variant: 'max', thinking: false }, effort_option: 'variant' })
+	assert.equal(custom.valid, true, custom.error)
+	assert.deepEqual(custom.target, { providerInstanceId: 'my-gateway', model: 'vendor/family/model-1', options: { variant: 'max', thinking: false } })
+	assert.equal(custom.candidate.candidate_id, 't3:my-gateway:vendor/family/model-1')
+	// Omitted options stay inherited: no options key, no default filled in, effort recorded as inherited.
+	const inherited = t3_prepare({ provider_instance_id: 'codex', model: 'gpt-b' })
+	assert.equal(inherited.valid, true, inherited.error)
+	assert.deepEqual(inherited.target, { providerInstanceId: 'codex', model: 'gpt-b' })
+	assert.equal(inherited.candidate.effort, 'inherited')
+	assert.deepEqual(inherited.candidate.controls, { models: ['gpt-b'] })
+	for (const key of ['runtimeMode', 'interactionMode', 'isolation']) assert.equal(Object.hasOwn(inherited.target, key), false)
+})
+
+test('T3 catalog adapter rejects unavailable, invented, renamed, or cross-model choices', () => {
+	const refused = (selection, extra) => {
+		const result = t3_prepare(selection, extra)
+		assert.equal(result.valid, false, JSON.stringify(selection))
+		assert.match(result.error, /\S/)
+		assert.equal(result.candidate, undefined)
+		assert.equal(result.target, undefined)
+		return result.error
+	}
+	assert.match(refused({ provider_instance_id: 'off-provider', model: 'grok-a' }), /cannot run child tasks/)
+	assert.match(refused({ provider_instance_id: 'missing', model: 'gpt-a' }), /not listed/)
+	assert.match(refused({ provider_instance_id: 'Codex', model: 'gpt-a' }), /not listed/)
+	assert.match(refused({ provider_instance_id: 'codex', model: 'GPT-A' }), /model GPT-A is not listed/)
+	assert.match(refused({ provider_instance_id: 'codex', model: 'claude-opus-x' }), /not listed/)
+	assert.match(refused({ provider_instance_id: 'codex' }), /model/)
+	// Option IDs and values belong to one model; nothing is translated or borrowed.
+	assert.match(refused({ provider_instance_id: 'codex', model: 'gpt-a', options: { effort: 'high' } }), /option effort/)
+	assert.match(refused({ provider_instance_id: 'claudeAgent', model: 'claude-opus-x', options: { reasoningEffort: 'xhigh' } }), /option reasoningEffort/)
+	assert.match(refused({ provider_instance_id: 'codex', model: 'gpt-a', options: { reasoningEffort: 'ultra' } }), /value ultra/)
+	assert.match(refused({ provider_instance_id: 'codex', model: 'gpt-a', options: { reasoningEffort: 'High' } }), /value High/)
+	refused({ provider_instance_id: 'claudeAgent', model: 'claude-opus-x', options: { fastMode: 'true' } })
+	refused({ provider_instance_id: 'claudeAgent', model: 'claude-opus-x', options: { effort: true } })
+	refused({ provider_instance_id: 'codex', model: 'gpt-a', options: ['reasoningEffort'] })
+	refused({ provider_instance_id: 'codex', model: 'gpt-a', options: { reasoningEffort: 'high' }, effort_option: 'effort' })
+	refused({ provider_instance_id: 'codex', model: 'gpt-a', effort_option: 'reasoningEffort' })
+	refused({ provider_instance_id: 'claudeAgent', model: 'claude-opus-x', options: { fastMode: true }, effort_option: 'fastMode' })
+	// The real invoke, result, and stop tools must all be observed.
+	for (const missing of ['invoke', 'result', 'stop']) assert.match(refused({ provider_instance_id: 'codex', model: 'gpt-a' }, { tools: { ...t3_tools(), [missing]: false } }), new RegExp(missing))
+	refused({ provider_instance_id: 'codex', model: 'gpt-a' }, { tools: undefined })
+	refused({ provider_instance_id: 'codex', model: 'gpt-a' }, { catalog: { providers: 'codex' } })
+	refused({ provider_instance_id: 'codex', model: 'gpt-a' }, { catalog: undefined })
+})
+
+test('selected native action carries the validated T3 target with the frozen brief unchanged', () => {
+	const prepared = t3_prepare({ provider_instance_id: 'my-gateway', model: 'vendor/family/model-1', options: { variant: 'low', thinking: true }, effort_option: 'variant' })
+	assert.equal(prepared.valid, true, prepared.error)
+	const brief = { text: valid_brief(), allowed_paths: ['a.js'] }
+	const base = selection_fixture()
+	base.capabilities.internal = prepared.candidate
+	base.task = { ...base.task, brief: clone_json(brief) }
+	// No choice with several eligible kinds still requires a host choice.
+	assert.equal(route.select_executor_action(base).status, 'selection-required')
+	const chosen = route.select_executor_action({ ...base, task: { ...base.task, exact_model: 'vendor/family/model-1', exact_effort: 'low', executor_choice: { kind: 'internal', candidate_id: prepared.candidate.candidate_id, reason: 'T3 is available and delegation is worthwhile' } } })
+	assert.equal(chosen.status, 'selected', chosen.requirement)
+	assert.equal(chosen.action.type, 'native-tool')
+	assert.deepEqual(chosen.action.target, prepared.target)
+	assert.deepEqual(chosen.action.brief, brief)
+	assert.deepEqual(chosen.actual, { model: 'vendor/family/model-1', effort: 'low' })
+	assert.equal(Object.hasOwn(chosen.action, 'command'), false)
+	// Mutating the result never reaches the prepared target.
+	chosen.action.target.options.variant = 'max'
+	assert.equal(prepared.target.options.variant, 'low')
+	// An exact effort the selected option value does not match is refused, not substituted.
+	const mismatch = route.select_executor_action({ ...base, task: { ...base.task, exact_effort: 'max', executor_choice: { kind: 'internal', reason: 'Owner chose max' } } })
+	assert.equal(mismatch.status, 'unsatisfied')
+	// Hand-built internal candidates keep their previous action shape.
+	const legacy = route.select_executor_action({ ...selection_fixture(), task: { ...selection_fixture().task, executor_choice: { kind: 'internal', reason: 'native' } } })
+	assert.equal(legacy.status, 'selected')
+	assert.equal(Object.hasOwn(legacy.action, 'target'), false)
+})
+const clone_json = value => JSON.parse(JSON.stringify(value))
